@@ -1,20 +1,44 @@
+import 'react-native-gesture-handler';
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { RootStackParamList } from './src/types';
+import SetupScreen from './src/screens/SetupScreen';
+import ChatScreen from './src/screens/ChatScreen';
+
+const Stack = createStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <NavigationContainer>
+      <StatusBar style="light" />
+      <Stack.Navigator
+        initialRouteName="Setup"
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: '#0F172A',
+          },
+          headerTintColor: '#94A3B8',
+          headerTitleStyle: {
+            fontWeight: '700',
+          },
+          cardStyle: {
+            backgroundColor: '#0F172A',
+          },
+        }}
+      >
+        <Stack.Screen
+          name="Setup"
+          component={SetupScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Chat"
+          component={ChatScreen}
+          options={{ headerBackTitle: '나가기' }}
+        />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
