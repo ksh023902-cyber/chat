@@ -11,15 +11,35 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
 
 type SetupScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Setup'>;
+type SetupScreenRouteProp = RouteProp<RootStackParamList, 'Setup'>;
 
 interface Props {
   navigation: SetupScreenNavigationProp;
+  route: SetupScreenRouteProp;
 }
 
-export default function SetupScreen({ navigation }: Props) {
+const CATEGORY_COLORS: Record<string, string> = {
+  독서: '#7C3AED',
+  정치: '#0F766E',
+  경제: '#B45309',
+  인간관계: '#BE185D',
+};
+
+const CATEGORY_PLACEHOLDERS: Record<string, string> = {
+  독서: '예: 데미안의 자아 찾기, 총균쇠의 논리...',
+  정치: '예: 민주주의의 한계, 권력의 정당성...',
+  경제: '예: 기본소득, 자본주의의 미래...',
+  인간관계: '예: 진정한 우정이란, 갈등을 대하는 방식...',
+};
+
+export default function SetupScreen({ navigation, route }: Props) {
+  const { category } = route.params;
+  const color = CATEGORY_COLORS[category] ?? '#6366F1';
+
   const [userName, setUserName] = useState('');
   const [topic, setTopic] = useState('');
   const topicInputRef = useRef<TextInput>(null);
@@ -45,22 +65,27 @@ export default function SetupScreen({ navigation }: Props) {
       navigation.navigate('Chat', {
         userName: userName.trim(),
         topic: topic.trim(),
+        category,
       });
     });
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <Text style={styles.backArrow}>‹</Text>
+      </TouchableOpacity>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.inner}>
           <View style={styles.header}>
-            <Text style={styles.title}>생각의 대화</Text>
-            <Text style={styles.subtitle}>
-              AI와 함께 깊이 사고하는 시간
-            </Text>
+            <View style={[styles.categoryBadge, { backgroundColor: color + '22', borderColor: color }]}>
+              <Text style={[styles.categoryText, { color }]}>{category}</Text>
+            </View>
+            <Text style={styles.title}>대화 설정</Text>
+            <Text style={styles.subtitle}>이름과 탐구할 주제를 입력해주세요</Text>
           </View>
 
           <View style={styles.form}>
@@ -83,7 +108,7 @@ export default function SetupScreen({ navigation }: Props) {
               <TextInput
                 ref={topicInputRef}
                 style={[styles.input, styles.topicInput]}
-                placeholder="탐구하고 싶은 주제를 입력하세요&#10;예: 자유의지, 행복의 의미, 정의란 무엇인가..."
+                placeholder={CATEGORY_PLACEHOLDERS[category] ?? '탐구하고 싶은 주제를 입력하세요'}
                 placeholderTextColor="#9CA3AF"
                 value={topic}
                 onChangeText={setTopic}
@@ -96,7 +121,11 @@ export default function SetupScreen({ navigation }: Props) {
 
             <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
               <TouchableOpacity
-                style={[styles.button, !isReady && styles.buttonDisabled]}
+                style={[
+                  styles.button,
+                  { backgroundColor: isReady ? color : '#1E293B' },
+                  isReady && { shadowColor: color },
+                ]}
                 onPress={handleStart}
                 disabled={!isReady}
                 activeOpacity={0.8}
@@ -108,9 +137,7 @@ export default function SetupScreen({ navigation }: Props) {
             </Animated.View>
           </View>
 
-          <Text style={styles.hint}>
-            AI가 질문을 통해 당신의 사고를 깊이 탐구하도록 돕습니다
-          </Text>
+          <Text style={styles.hint}>AI가 비판적 사고를 함께 탐구합니다</Text>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -122,31 +149,59 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0F172A',
   },
+  backButton: {
+    position: 'absolute',
+    top: 52,
+    left: 20,
+    zIndex: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backArrow: {
+    fontSize: 22,
+    color: '#94A3B8',
+    lineHeight: 26,
+  },
   container: {
     flex: 1,
   },
   inner: {
     flex: 1,
     paddingHorizontal: 28,
-    paddingTop: 60,
+    paddingTop: 48,
     paddingBottom: 40,
     justifyContent: 'space-between',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 40,
+  },
+  categoryBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  categoryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   title: {
-    fontSize: 36,
+    fontSize: 30,
     fontWeight: '700',
     color: '#F8FAFC',
     letterSpacing: -0.5,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#94A3B8',
-    letterSpacing: 0.2,
+    fontSize: 15,
+    color: '#64748B',
   },
   form: {
     flex: 1,
@@ -156,7 +211,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#CBD5E1',
     letterSpacing: 0.5,
@@ -178,21 +233,14 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   button: {
-    backgroundColor: '#6366F1',
     borderRadius: 14,
     paddingVertical: 18,
     alignItems: 'center',
     marginTop: 8,
-    shadowColor: '#6366F1',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 8,
-  },
-  buttonDisabled: {
-    backgroundColor: '#1E293B',
-    shadowOpacity: 0,
-    elevation: 0,
   },
   buttonText: {
     fontSize: 17,

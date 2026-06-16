@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from './src/types';
+import HomeScreen from './src/screens/HomeScreen';
 import SetupScreen from './src/screens/SetupScreen';
 import ChatScreen from './src/screens/ChatScreen';
 
@@ -14,7 +15,7 @@ export default function App() {
     <NavigationContainer>
       <StatusBar style="light" />
       <Stack.Navigator
-        initialRouteName="Setup"
+        initialRouteName="Home"
         screenOptions={{
           headerStyle: {
             backgroundColor: '#0F172A',
@@ -29,6 +30,11 @@ export default function App() {
         }}
       >
         <Stack.Screen
+          name="Home"
+          component={HomeScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
           name="Setup"
           component={SetupScreen}
           options={{ headerShown: false }}
@@ -36,7 +42,7 @@ export default function App() {
         <Stack.Screen
           name="Chat"
           component={ChatScreen}
-          options={{ headerBackTitle: '나가기' }}
+          options={{ headerBackTitle: '돌아가기' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

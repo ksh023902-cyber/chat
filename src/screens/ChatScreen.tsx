@@ -30,8 +30,16 @@ function generateId(): string {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
 }
 
+const CATEGORY_COLORS: Record<string, string> = {
+  독서: '#7C3AED',
+  정치: '#0F766E',
+  경제: '#B45309',
+  인간관계: '#BE185D',
+};
+
 export default function ChatScreen({ navigation, route }: Props) {
-  const { userName, topic } = route.params;
+  const { userName, topic, category } = route.params;
+  const categoryColor = CATEGORY_COLORS[category] ?? '#6366F1';
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -39,30 +47,14 @@ export default function ChatScreen({ navigation, route }: Props) {
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
-    navigation.setOptions({
-      headerTitle: () => (
-        <View style={styles.headerTitle}>
-          <Text style={styles.headerTopic} numberOfLines={1}>
-            {topic}
-          </Text>
-          <Text style={styles.headerUser}>{userName}의 사고 탐구</Text>
-        </View>
-      ),
-      headerStyle: {
-        backgroundColor: '#0F172A',
-        shadowColor: 'transparent',
-        elevation: 0,
-      },
-      headerTintColor: '#94A3B8',
-    });
-
+    navigation.setOptions({ headerShown: false });
     startConversation();
   }, []);
 
   const startConversation = async () => {
     try {
       setIsLoading(true);
-      const question = await getInitialQuestion(userName, topic);
+      const question = await getInitialQuestion(userName, topic, category);
       const aiMessage: Message = {
         id: generateId(),
         role: 'assistant',
@@ -72,7 +64,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       setMessages([aiMessage]);
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('[Gemini Error]', errMsg);
+      console.error('[Groq Error]', errMsg);
       const errorMessage: Message = {
         id: generateId(),
         role: 'assistant',
@@ -102,7 +94,7 @@ export default function ChatScreen({ navigation, route }: Props) {
     setIsTyping(true);
 
     try {
-      const reply = await continueConversation(userName, topic, updatedMessages);
+      const reply = await continueConversation(userName, topic, category, updatedMessages);
       const aiMessage: Message = {
         id: generateId(),
         role: 'assistant',
@@ -121,7 +113,7 @@ export default function ChatScreen({ navigation, route }: Props) {
     } finally {
       setIsTyping(false);
     }
-  }, [inputText, messages, isTyping, userName, topic]);
+  }, [inputText, messages, isTyping, userName, topic, category]);
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -130,9 +122,7 @@ export default function ChatScreen({ navigation, route }: Props) {
   };
 
   useEffect(() => {
-    if (messages.length > 0) {
-      scrollToBottom();
-    }
+    if (messages.length > 0) scrollToBottom();
   }, [messages, isTyping]);
 
   const renderItem = ({ item }: { item: Message }) => (
@@ -141,14 +131,28 @@ export default function ChatScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* 커스텀 헤더 */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backArrow}>‹</Text>
+        </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <View style={[styles.headerBadge, { backgroundColor: categoryColor + '33' }]}>
+            <Text style={[styles.headerCategory, { color: categoryColor }]}>{category}</Text>
+          </View>
+          <Text style={styles.headerTopic} numberOfLines={1}>{topic}</Text>
+        </View>
+        <View style={styles.headerRight} />
+      </View>
+
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={90}
+        keyboardVerticalOffset={0}
       >
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#6366F1" />
+            <ActivityIndicator size="large" color={categoryColor} />
             <Text style={styles.loadingText}>첫 번째 질문을 생각하고 있어요...</Text>
           </View>
         ) : (
@@ -185,7 +189,8 @@ export default function ChatScreen({ navigation, route }: Props) {
           <TouchableOpacity
             style={[
               styles.sendButton,
-              (!inputText.trim() || isTyping) && styles.sendButtonDisabled,
+              { backgroundColor: (!inputText.trim() || isTyping) ? '#1E293B' : categoryColor },
+              inputText.trim() && !isTyping && { shadowColor: categoryColor },
             ]}
             onPress={sendMessage}
             disabled={!inputText.trim() || isTyping}
@@ -204,22 +209,53 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0F172A',
   },
-  container: {
-    flex: 1,
-  },
-  headerTitle: {
+  header: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backArrow: {
+    fontSize: 22,
+    color: '#94A3B8',
+    lineHeight: 26,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  headerBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  headerCategory: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
   headerTopic: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: '#F1F5F9',
     maxWidth: 220,
   },
-  headerUser: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+  headerRight: {
+    width: 32,
+  },
+  container: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
@@ -263,19 +299,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#6366F1',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#6366F1',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 6,
     elevation: 4,
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#1E293B',
-    shadowOpacity: 0,
-    elevation: 0,
   },
   sendIcon: {
     fontSize: 20,

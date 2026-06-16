@@ -11,10 +11,14 @@ export interface ConversationState {
   messages: Message[];
 }
 
+export type Category = '독서' | '정치' | '경제' | '인간관계';
+
 export type RootStackParamList = {
-  Setup: undefined;
+  Home: undefined;
+  Setup: { category: Category };
   Chat: {
     userName: string;
     topic: string;
+    category: Category;
   };
 };

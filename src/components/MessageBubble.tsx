@@ -36,7 +36,7 @@ export default function MessageBubble({ message, userName }: Props) {
       ]}
     >
       <Text style={[styles.sender, isUser ? styles.userSender : styles.aiSender]}>
-        {isUser ? userName : 'AI'}
+        {isUser ? userName : '소크'}
       </Text>
       <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
         <Text style={[styles.text, isUser ? styles.userText : styles.aiText]}>
