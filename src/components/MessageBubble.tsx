@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
 import { Message } from '../types';
 
 interface Props {
@@ -7,23 +7,17 @@ interface Props {
   userName: string;
 }
 
+const { width } = Dimensions.get('window');
+
 export default function MessageBubble({ message, userName }: Props) {
   const isUser = message.role === 'user';
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(12)).current;
+  const translateY = useRef(new Animated.Value(width * 0.03)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
+      Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 300, useNativeDriver: true }),
     ]).start();
   }, []);
 
@@ -36,7 +30,7 @@ export default function MessageBubble({ message, userName }: Props) {
       ]}
     >
       <Text style={[styles.sender, isUser ? styles.userSender : styles.aiSender]}>
-        {isUser ? userName : '소크'}
+        {isUser ? userName : 'AI'}
       </Text>
       <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
         <Text style={[styles.text, isUser ? styles.userText : styles.aiText]}>
@@ -49,7 +43,7 @@ export default function MessageBubble({ message, userName }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 6,
+    marginVertical: width * 0.015,
     maxWidth: '85%',
   },
   userContainer: {
@@ -61,9 +55,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   sender: {
-    fontSize: 11,
+    fontSize: width * 0.028,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: width * 0.01,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
@@ -74,23 +68,23 @@ const styles = StyleSheet.create({
     color: '#34D399',
   },
   bubble: {
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: width * 0.045,
+    paddingHorizontal: width * 0.04,
+    paddingVertical: width * 0.03,
   },
   userBubble: {
     backgroundColor: '#4F46E5',
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: width * 0.01,
   },
   aiBubble: {
     backgroundColor: '#1E293B',
-    borderBottomLeftRadius: 4,
+    borderBottomLeftRadius: width * 0.01,
     borderWidth: 1,
     borderColor: '#334155',
   },
   text: {
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: width * 0.04,
+    lineHeight: width * 0.065,
   },
   userText: {
     color: '#FFFFFF',

@@ -1,5 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
+import { View, StyleSheet, Animated, Dimensions } from 'react-native';
+
+const { width } = Dimensions.get('window');
+const DOT_SIZE = width * 0.022;
 
 export default function TypingIndicator() {
   const dot1 = useRef(new Animated.Value(0)).current;
@@ -11,16 +14,8 @@ export default function TypingIndicator() {
       Animated.loop(
         Animated.sequence([
           Animated.delay(delay),
-          Animated.timing(dot, {
-            toValue: -6,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(dot, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-          }),
+          Animated.timing(dot, { toValue: -(width * 0.015), duration: 300, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
           Animated.delay(600),
         ])
       );
@@ -28,26 +23,16 @@ export default function TypingIndicator() {
     const a1 = animate(dot1, 0);
     const a2 = animate(dot2, 150);
     const a3 = animate(dot3, 300);
+    a1.start(); a2.start(); a3.start();
 
-    a1.start();
-    a2.start();
-    a3.start();
-
-    return () => {
-      a1.stop();
-      a2.stop();
-      a3.stop();
-    };
+    return () => { a1.stop(); a2.stop(); a3.stop(); };
   }, []);
 
   return (
     <View style={styles.container}>
       <View style={styles.bubble}>
         {[dot1, dot2, dot3].map((dot, i) => (
-          <Animated.View
-            key={i}
-            style={[styles.dot, { transform: [{ translateY: dot }] }]}
-          />
+          <Animated.View key={i} style={[styles.dot, { transform: [{ translateY: dot }] }]} />
         ))}
       </View>
     </View>
@@ -57,24 +42,24 @@ export default function TypingIndicator() {
 const styles = StyleSheet.create({
   container: {
     alignSelf: 'flex-start',
-    marginVertical: 6,
+    marginVertical: width * 0.015,
   },
   bubble: {
     backgroundColor: '#1E293B',
-    borderRadius: 18,
-    borderBottomLeftRadius: 4,
+    borderRadius: width * 0.045,
+    borderBottomLeftRadius: width * 0.01,
     borderWidth: 1,
     borderColor: '#334155',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: width * 0.04,
+    paddingVertical: width * 0.035,
     flexDirection: 'row',
-    gap: 4,
+    gap: width * 0.015,
     alignItems: 'center',
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: DOT_SIZE,
+    height: DOT_SIZE,
+    borderRadius: DOT_SIZE / 2,
     backgroundColor: '#34D399',
   },
 });

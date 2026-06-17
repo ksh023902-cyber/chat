@@ -5,20 +5,23 @@ export interface Message {
   timestamp: Date;
 }
 
-export interface ConversationState {
-  userName: string;
-  topic: string;
-  messages: Message[];
+export interface DailyScenario {
+  date: string;
+  content: string;
 }
 
-export type Category = '독서' | '정치' | '경제' | '인간관계';
+export interface StreakData {
+  count: number;
+  lastDate: string;
+}
+
+export interface Perspective {
+  character: string;
+  opinion: string;
+}
 
 export type RootStackParamList = {
   Home: undefined;
-  Setup: { category: Category };
-  Chat: {
-    userName: string;
-    topic: string;
-    category: Category;
-  };
+  Perspective: { scenario: string };
+  Chat: { scenario: string; perspectives: Perspective[] };
 };

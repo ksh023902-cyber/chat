@@ -8,15 +8,16 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
-  ActivityIndicator,
+  Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
-import { RootStackParamList, Message } from '../types';
+import { RootStackParamList, Message, Perspective, StreakData } from '../types';
 import MessageBubble from '../components/MessageBubble';
 import TypingIndicator from '../components/TypingIndicator';
-import { getInitialQuestion, continueConversation } from '../services/claude';
+import { commentOnAnswer } from '../services/claude';
 
 type ChatScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Chat'>;
 type ChatScreenRouteProp = RouteProp<RootStackParamList, 'Chat'>;
@@ -26,55 +27,89 @@ interface Props {
   route: ChatScreenRouteProp;
 }
 
+const { width, height } = Dimensions.get('window');
+const HP = width * 0.05;
+
 function generateId(): string {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  독서: '#7C3AED',
-  정치: '#0F766E',
-  경제: '#B45309',
-  인간관계: '#BE185D',
-};
+function todayString(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatPerspectives(perspectives: Perspective[]): string {
+  const filled = perspectives.filter(p => p.opinion);
+  return filled.map(p => `${p.character} 입장: ${p.opinion}`).join('\n');
+}
 
 export default function ChatScreen({ navigation, route }: Props) {
-  const { userName, topic, category } = route.params;
-  const categoryColor = CATEGORY_COLORS[category] ?? '#6366F1';
+  const { scenario, perspectives } = route.params;
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
+  const [streakRecorded, setStreakRecorded] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
-    startConversation();
   }, []);
 
-  const startConversation = async () => {
-    try {
-      setIsLoading(true);
-      const question = await getInitialQuestion(userName, topic, category);
-      const aiMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: question,
-        timestamp: new Date(),
-      };
-      setMessages([aiMessage]);
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('[Groq Error]', errMsg);
-      const errorMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: `오류: ${errMsg}`,
-        timestamp: new Date(),
-      };
-      setMessages([errorMessage]);
-    } finally {
-      setIsLoading(false);
+  useEffect(() => {
+    if (!perspectives || perspectives.every(p => !p.opinion)) return;
+
+    const perspText = formatPerspectives(perspectives);
+    const userMsg: Message = {
+      id: generateId(),
+      role: 'user',
+      content: perspText,
+      timestamp: new Date(),
+    };
+    setMessages([userMsg]);
+    setIsTyping(true);
+    setStreakRecorded(true);
+
+    recordStreak();
+
+    commentOnAnswer(scenario, [userMsg])
+      .then(reply => {
+        setMessages(prev => [
+          ...prev,
+          { id: generateId(), role: 'assistant', content: reply, timestamp: new Date() },
+        ]);
+      })
+      .catch(() => {
+        setMessages(prev => [
+          ...prev,
+          { id: generateId(), role: 'assistant', content: '오류가 발생했습니다. 다시 시도해주세요.', timestamp: new Date() },
+        ]);
+      })
+      .finally(() => setIsTyping(false));
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
+  }, [messages, isTyping]);
+
+  const recordStreak = async () => {
+    if (streakRecorded) return;
+    setStreakRecorded(true);
+    const today = todayString();
+    try {
+      const stored = await AsyncStorage.getItem('streak');
+      let count = 1;
+      if (stored) {
+        const parsed: StreakData = JSON.parse(stored);
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().slice(0, 10);
+        if (parsed.lastDate === today) return;
+        if (parsed.lastDate === yesterdayStr) count = parsed.count + 1;
+      }
+      await AsyncStorage.setItem('streak', JSON.stringify({ count, lastDate: today } as StreakData));
+    } catch {}
   };
 
   const sendMessage = useCallback(async () => {
@@ -92,85 +127,75 @@ export default function ChatScreen({ navigation, route }: Props) {
     setMessages(updatedMessages);
     setInputText('');
     setIsTyping(true);
+    recordStreak();
 
     try {
-      const reply = await continueConversation(userName, topic, category, updatedMessages);
-      const aiMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: reply,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch (error) {
-      const errorMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: '오류가 발생했습니다. 다시 시도해주세요.',
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      const reply = await commentOnAnswer(scenario, updatedMessages);
+      setMessages((prev) => [
+        ...prev,
+        { id: generateId(), role: 'assistant', content: reply, timestamp: new Date() },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: generateId(),
+          role: 'assistant',
+          content: '오류가 발생했습니다. 다시 시도해주세요.',
+          timestamp: new Date(),
+        },
+      ]);
     } finally {
       setIsTyping(false);
     }
-  }, [inputText, messages, isTyping, userName, topic, category]);
-
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  };
-
-  useEffect(() => {
-    if (messages.length > 0) scrollToBottom();
-  }, [messages, isTyping]);
+  }, [inputText, messages, isTyping, scenario, streakRecorded]);
 
   const renderItem = ({ item }: { item: Message }) => (
-    <MessageBubble message={item} userName={userName} />
+    <MessageBubble message={item} userName="나" />
   );
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* 커스텀 헤더 */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backArrow}>‹</Text>
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <View style={[styles.headerBadge, { backgroundColor: categoryColor + '33' }]}>
-            <Text style={[styles.headerCategory, { color: categoryColor }]}>{category}</Text>
-          </View>
-          <Text style={styles.headerTopic} numberOfLines={1}>{topic}</Text>
+
+      {/* 상단 영역 — flex 2 */}
+      <View style={styles.topArea}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <Text style={styles.backArrow}>‹</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>오늘의 생각</Text>
+          <View style={styles.headerRight} />
         </View>
-        <View style={styles.headerRight} />
+
+        <View style={styles.scenarioBanner}>
+          <View style={styles.bannerDot} />
+          <Text style={styles.bannerText} numberOfLines={4}>{scenario}</Text>
+        </View>
       </View>
 
+      {/* 콘텐츠 + 하단 입력 — flex 8 */}
       <KeyboardAvoidingView
-        style={styles.container}
+        style={styles.mainArea}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={categoryColor} />
-            <Text style={styles.loadingText}>첫 번째 질문을 생각하고 있어요...</Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={renderItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.messageList}
-            ListFooterComponent={isTyping ? <TypingIndicator /> : null}
-            onContentSizeChange={scrollToBottom}
-          />
-        )}
+        {/* 메시지 목록 — flex 6 */}
+        <FlatList
+          ref={flatListRef}
+          style={styles.messageList}
+          data={messages}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.messageListContent}
+          ListFooterComponent={isTyping ? <TypingIndicator /> : null}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        />
 
-        <View style={styles.inputContainer}>
+        {/* 하단 입력 — flex 2 */}
+        <View style={styles.inputArea}>
           <TextInput
             style={styles.textInput}
-            placeholder="생각을 입력하세요..."
+            placeholder="생각을 자유롭게 말해주세요..."
             placeholderTextColor="#475569"
             value={inputText}
             onChangeText={setInputText}
@@ -178,19 +203,24 @@ export default function ChatScreen({ navigation, route }: Props) {
             maxLength={1000}
             returnKeyType="send"
             blurOnSubmit={false}
-            editable={!isLoading}
             onKeyPress={({ nativeEvent }) => {
               const event = nativeEvent as typeof nativeEvent & { shiftKey?: boolean };
-              if (event.key === 'Enter' && !event.shiftKey) {
-                sendMessage();
-              }
+              if (event.key === 'Enter' && !event.shiftKey) sendMessage();
             }}
           />
           <TouchableOpacity
             style={[
               styles.sendButton,
-              { backgroundColor: (!inputText.trim() || isTyping) ? '#1E293B' : categoryColor },
-              inputText.trim() && !isTyping && { shadowColor: categoryColor },
+              {
+                backgroundColor: !inputText.trim() || isTyping ? '#1E293B' : '#6366F1',
+                ...(inputText.trim() && !isTyping && {
+                  shadowColor: '#6366F1',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: 6,
+                  elevation: 4,
+                }),
+              },
             ]}
             onPress={sendMessage}
             disabled={!inputText.trim() || isTyping}
@@ -200,6 +230,7 @@ export default function ChatScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
     </SafeAreaView>
   );
 }
@@ -209,105 +240,112 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0F172A',
   },
-  header: {
+
+  /* 상단 영역 */
+  topArea: {
+    flex: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: HP,
+    paddingVertical: height * 0.012,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
   },
   backButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: width * 0.08,
+    height: width * 0.08,
+    borderRadius: width * 0.025,
     backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
   },
   backArrow: {
-    fontSize: 22,
+    fontSize: width * 0.06,
     color: '#94A3B8',
-    lineHeight: 26,
+    lineHeight: width * 0.075,
   },
-  headerCenter: {
+  headerTitle: {
     flex: 1,
-    alignItems: 'center',
-    gap: 3,
-  },
-  headerBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  headerCategory: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-  },
-  headerTopic: {
-    fontSize: 14,
+    textAlign: 'center',
+    fontSize: width * 0.04,
     fontWeight: '700',
     color: '#F1F5F9',
-    maxWidth: 220,
   },
   headerRight: {
-    width: 32,
+    width: width * 0.08,
   },
-  container: {
+  scenarioBanner: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#1E293B',
+    paddingHorizontal: HP,
+    paddingVertical: height * 0.015,
+    gap: width * 0.025,
   },
-  loadingContainer: {
+  bannerDot: {
+    width: width * 0.015,
+    height: width * 0.015,
+    borderRadius: width * 0.0075,
+    backgroundColor: '#6366F1',
+    marginTop: height * 0.005,
+    flexShrink: 0,
+  },
+  bannerText: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
+    fontSize: width * 0.035,
+    color: '#94A3B8',
+    lineHeight: width * 0.055,
   },
-  loadingText: {
-    color: '#64748B',
-    fontSize: 15,
+
+  /* 콘텐츠 + 입력 영역 */
+  mainArea: {
+    flex: 8,
   },
   messageList: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    paddingBottom: 8,
+    flex: 1,
   },
-  inputContainer: {
+  messageListContent: {
+    paddingHorizontal: HP,
+    paddingVertical: height * 0.02,
+    paddingBottom: height * 0.01,
+  },
+  inputArea: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: HP,
+    paddingVertical: height * 0.015,
     borderTopWidth: 1,
     borderTopColor: '#1E293B',
     backgroundColor: '#0F172A',
-    gap: 10,
+    gap: width * 0.025,
   },
   textInput: {
     flex: 1,
     backgroundColor: '#1E293B',
-    borderRadius: 22,
-    paddingHorizontal: 18,
-    paddingTop: 12,
-    paddingBottom: 12,
-    fontSize: 16,
+    borderRadius: width * 0.06,
+    paddingHorizontal: width * 0.045,
+    paddingTop: height * 0.015,
+    paddingBottom: height * 0.015,
+    fontSize: width * 0.04,
     color: '#F1F5F9',
-    maxHeight: 120,
+    maxHeight: height * 0.15,
     borderWidth: 1,
     borderColor: '#334155',
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: width * 0.11,
+    height: width * 0.11,
+    borderRadius: width * 0.055,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 4,
   },
   sendIcon: {
-    fontSize: 20,
+    fontSize: width * 0.05,
     color: '#FFFFFF',
     fontWeight: '700',
   },
