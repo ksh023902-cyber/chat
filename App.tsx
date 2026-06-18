@@ -1,16 +1,31 @@
 import 'react-native-gesture-handler';
-import React from 'react';
+import React, { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from './src/types';
 import HomeScreen from './src/screens/HomeScreen';
-import PerspectiveScreen from './src/screens/PerspectiveScreen';
+import AlarmScreen from './src/screens/AlarmScreen';
+import ScenarioScreen from './src/screens/ScenarioScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import { setupNotificationHandler } from './src/services/notifications';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
 export default function App() {
+  useEffect(() => {
+    setupNotificationHandler();
+    if (Platform.OS === 'web') {
+      const style = document.createElement('style');
+      style.innerHTML = `
+        html, body { overflow-y: auto !important; height: auto !important; }
+        #root { overflow-y: auto !important; height: auto !important; min-height: 100vh; }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []);
+
   return (
     <NavigationContainer>
       <StatusBar style="light" />
@@ -24,7 +39,8 @@ export default function App() {
         }}
       >
         <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Perspective" component={PerspectiveScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Alarm" component={AlarmScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Scenario" component={ScenarioScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>

@@ -22,6 +22,7 @@ export interface Perspective {
 
 export type RootStackParamList = {
   Home: undefined;
-  Perspective: { scenario: string };
-  Chat: { scenario: string; perspectives: Perspective[] };
+  Alarm: undefined;
+  Scenario: undefined;
+  Chat: { scenario: string };
 };

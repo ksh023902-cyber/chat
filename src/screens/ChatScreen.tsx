@@ -10,14 +10,14 @@ import {
   Platform,
   Dimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
-import { RootStackParamList, Message, Perspective, StreakData } from '../types';
+import { RootStackParamList, Message, StreakData } from '../types';
 import MessageBubble from '../components/MessageBubble';
 import TypingIndicator from '../components/TypingIndicator';
-import { commentOnAnswer } from '../services/claude';
+import { openTeacherSession, teacherReply } from '../services/claude';
 
 type ChatScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Chat'>;
 type ChatScreenRouteProp = RouteProp<RootStackParamList, 'Chat'>;
@@ -38,51 +38,38 @@ function todayString(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatPerspectives(perspectives: Perspective[]): string {
-  const filled = perspectives.filter(p => p.opinion);
-  return filled.map(p => `${p.character} 입장: ${p.opinion}`).join('\n');
-}
-
 export default function ChatScreen({ navigation, route }: Props) {
-  const { scenario, perspectives } = route.params;
+  const { scenario } = route.params;
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
+  const [isTyping, setIsTyping] = useState(true);
   const [streakRecorded, setStreakRecorded] = useState(false);
+  const [scenarioExpanded, setScenarioExpanded] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
   }, []);
 
+  // 교사 수업 자동 시작
   useEffect(() => {
-    if (!perspectives || perspectives.every(p => !p.opinion)) return;
-
-    const perspText = formatPerspectives(perspectives);
-    const userMsg: Message = {
-      id: generateId(),
-      role: 'user',
-      content: perspText,
-      timestamp: new Date(),
-    };
-    setMessages([userMsg]);
-    setIsTyping(true);
-    setStreakRecorded(true);
-
-    recordStreak();
-
-    commentOnAnswer(scenario, [userMsg])
-      .then(reply => {
-        setMessages(prev => [
-          ...prev,
-          { id: generateId(), role: 'assistant', content: reply, timestamp: new Date() },
-        ]);
+    openTeacherSession(scenario)
+      .then(opening => {
+        setMessages([{
+          id: generateId(),
+          role: 'assistant',
+          content: opening,
+          timestamp: new Date(),
+        }]);
       })
       .catch(() => {
-        setMessages(prev => [
-          ...prev,
-          { id: generateId(), role: 'assistant', content: '오류가 발생했습니다. 다시 시도해주세요.', timestamp: new Date() },
-        ]);
+        setMessages([{
+          id: generateId(),
+          role: 'assistant',
+          content: '이 사건, 어떻게 생각하세요? 처음 떠오른 생각을 말해보세요.',
+          timestamp: new Date(),
+        }]);
       })
       .finally(() => setIsTyping(false));
   }, []);
@@ -130,20 +117,15 @@ export default function ChatScreen({ navigation, route }: Props) {
     recordStreak();
 
     try {
-      const reply = await commentOnAnswer(scenario, updatedMessages);
-      setMessages((prev) => [
+      const reply = await teacherReply(scenario, updatedMessages);
+      setMessages(prev => [
         ...prev,
         { id: generateId(), role: 'assistant', content: reply, timestamp: new Date() },
       ]);
     } catch {
-      setMessages((prev) => [
+      setMessages(prev => [
         ...prev,
-        {
-          id: generateId(),
-          role: 'assistant',
-          content: '오류가 발생했습니다. 다시 시도해주세요.',
-          timestamp: new Date(),
-        },
+        { id: generateId(), role: 'assistant', content: '오류가 발생했습니다. 다시 시도해주세요.', timestamp: new Date() },
       ]);
     } finally {
       setIsTyping(false);
@@ -154,44 +136,56 @@ export default function ChatScreen({ navigation, route }: Props) {
     <MessageBubble message={item} userName="나" />
   );
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
+  const webStyle = Platform.OS === 'web'
+    ? { paddingTop: insets.top, paddingBottom: insets.bottom } as const
+    : undefined;
 
-      {/* 상단 영역 — flex 2 */}
+  return (
+    <SafeAreaView style={[styles.safeArea, webStyle]}>
+
+      {/* 상단 — 헤더 + 시나리오 배너 */}
       <View style={styles.topArea}>
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Text style={styles.backArrow}>‹</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>오늘의 생각</Text>
+          <Text style={styles.headerTitle}>사고력 수업</Text>
           <View style={styles.headerRight} />
         </View>
 
-        <View style={styles.scenarioBanner}>
+        <TouchableOpacity
+          style={styles.scenarioBanner}
+          onPress={() => setScenarioExpanded(v => !v)}
+          activeOpacity={0.7}
+        >
           <View style={styles.bannerDot} />
-          <Text style={styles.bannerText} numberOfLines={4}>{scenario}</Text>
-        </View>
+          <Text
+            style={styles.bannerText}
+            numberOfLines={scenarioExpanded ? undefined : 2}
+          >
+            {scenario}
+          </Text>
+          <Text style={styles.bannerToggle}>{scenarioExpanded ? '▲' : '▼'}</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* 콘텐츠 + 하단 입력 — flex 8 */}
+      {/* 채팅 + 입력 */}
       <KeyboardAvoidingView
         style={styles.mainArea}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        {/* 메시지 목록 — flex 6 */}
         <FlatList
           ref={flatListRef}
           style={styles.messageList}
           data={messages}
           renderItem={renderItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={item => item.id}
           contentContainerStyle={styles.messageListContent}
           ListFooterComponent={isTyping ? <TypingIndicator /> : null}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
-        {/* 하단 입력 — flex 2 */}
         <View style={styles.inputArea}>
           <TextInput
             style={styles.textInput}
@@ -241,7 +235,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
   },
 
-  /* 상단 영역 */
   topArea: {
     flex: 2,
     borderBottomWidth: 1,
@@ -278,6 +271,7 @@ const styles = StyleSheet.create({
   headerRight: {
     width: width * 0.08,
   },
+
   scenarioBanner: {
     flex: 1,
     flexDirection: 'row',
@@ -297,12 +291,16 @@ const styles = StyleSheet.create({
   },
   bannerText: {
     flex: 1,
-    fontSize: width * 0.035,
+    fontSize: width * 0.033,
     color: '#94A3B8',
-    lineHeight: width * 0.055,
+    lineHeight: width * 0.052,
+  },
+  bannerToggle: {
+    fontSize: width * 0.028,
+    color: '#475569',
+    flexShrink: 0,
   },
 
-  /* 콘텐츠 + 입력 영역 */
   mainArea: {
     flex: 8,
   },

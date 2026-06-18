@@ -1,159 +1,82 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  Animated,
   Dimensions,
+  Animated,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList, StreakData } from '../types';
-import { generateDailyScenario, getTodayProblemType } from '../services/claude';
+import { RootStackParamList } from '../types';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
-
-interface Props {
-  navigation: HomeScreenNavigationProp;
-}
 
 const { width, height } = Dimensions.get('window');
 const HP = width * 0.05;
 
-function todayString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-export default function HomeScreen({ navigation }: Props) {
-  const [scenario, setScenario] = useState<string | null>(null);
-  const [streak, setStreak] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [completedToday, setCompletedToday] = useState(false);
+export default function HomeScreen({ navigation }: { navigation: HomeScreenNavigationProp }) {
+  const insets = useSafeAreaInsets();
+  const glowAnim = useRef(new Animated.Value(0.4)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const buttonScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    loadData();
+    // 페이드인
+    Animated.timing(fadeAnim, { toValue: 1, duration: 1000, useNativeDriver: true }).start();
+
+    // 버튼 글로우 반복
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 1800, useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 0.4, duration: 1800, useNativeDriver: true }),
+      ])
+    ).start();
   }, []);
 
-  useEffect(() => {
-    if (!isLoading && scenario) {
-      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-    }
-  }, [isLoading, scenario]);
-
-  const loadData = async () => {
-    const today = todayString();
-    try {
-      const [scenarioContent, storedStreak] = await Promise.all([
-        generateDailyScenario(),
-        AsyncStorage.getItem('streak'),
-      ]);
-
-      let streakCount = 0;
-      if (storedStreak) {
-        const parsed: StreakData = JSON.parse(storedStreak);
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().slice(0, 10);
-
-        if (parsed.lastDate === today) {
-          streakCount = parsed.count;
-          setCompletedToday(true);
-        } else if (parsed.lastDate === yesterdayStr) {
-          streakCount = parsed.count;
-        }
-      }
-
-      setScenario(scenarioContent);
-      setStreak(streakCount);
-    } catch {
-      setScenario('오류가 발생했어요. 앱을 다시 시작해주세요.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleStart = () => {
-    if (!scenario) return;
-    Animated.sequence([
-      Animated.timing(buttonScale, { toValue: 0.96, duration: 80, useNativeDriver: true }),
-      Animated.timing(buttonScale, { toValue: 1, duration: 80, useNativeDriver: true }),
-    ]).start(() => navigation.navigate('Perspective', { scenario }));
+    navigation.navigate('Scenario');
   };
+
+  const webStyle = Platform.OS === 'web'
+    ? { paddingTop: insets.top, paddingBottom: insets.bottom } as const
+    : undefined;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+    <SafeAreaView style={[styles.safeArea, webStyle]}>
+      <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
 
-        {/* 상단 영역 — flex 2 */}
-        <View style={styles.topArea}>
-          <View style={styles.headerRow}>
-            <View style={styles.headerLeft}>
-              <Text style={styles.appTitle}>오늘의 상황</Text>
-              <Text style={styles.dateText}>
-                {new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
-              </Text>
-            </View>
-            <View style={styles.streakBadge}>
-              <Text style={styles.streakFire}>🔥</Text>
-              <Text style={styles.streakCount}>{streak}일</Text>
-            </View>
-          </View>
+        {/* 알람 버튼 — 우상단 */}
+        <TouchableOpacity
+          style={styles.alarmButton}
+          onPress={() => navigation.navigate('Alarm')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.alarmIcon}>🔔</Text>
+        </TouchableOpacity>
+
+        {/* 중앙 타이틀 */}
+        <View style={styles.titleArea}>
+          <Text style={styles.eyebrow}>매일 하나의 사건</Text>
+          <Text style={styles.title}>생각하는{'\n'}힘</Text>
+          <Text style={styles.subtitle}>글로만 읽어도 머릿속에{'\n'}영상이 그려집니다</Text>
         </View>
 
-        {/* 콘텐츠 영역 — flex 6 */}
-        <View style={styles.contentArea}>
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#6366F1" />
-              <Text style={styles.loadingText}>오늘의 상황을 불러오는 중...</Text>
-            </View>
-          ) : (
-            <Animated.View style={[{ flex: 1 }, { opacity: fadeAnim }]}>
-              <ScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-              >
-                <View style={styles.scenarioCard}>
-                  <View style={styles.cardHeader}>
-                    <View style={styles.dot} />
-                    <Text style={styles.cardLabel}>{getTodayProblemType().name}</Text>
-                  </View>
-                  <Text style={styles.scenarioText}>{scenario}</Text>
-                </View>
-                <Text style={styles.hintText}>어떤 관점이 가장 와닿으세요?</Text>
-              </ScrollView>
-            </Animated.View>
-          )}
+        {/* 시작 버튼 */}
+        <View style={styles.buttonArea}>
+          <Animated.View style={[styles.glowRing, { opacity: glowAnim }]} />
+          <TouchableOpacity
+            style={styles.startButton}
+            onPress={handleStart}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.startText}>오늘의 사건 시작</Text>
+            <Text style={styles.startArrow}>→</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* 하단 버튼 영역 — flex 2 */}
-        <View style={styles.bottomArea}>
-          {!isLoading && (
-            completedToday ? (
-              <View style={styles.completedBanner}>
-                <Text style={styles.completedIcon}>✓</Text>
-                <Text style={styles.completedText}>오늘 완료했어요 — 내일 또 만나요</Text>
-              </View>
-            ) : (
-              <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
-                <TouchableOpacity style={styles.startButton} onPress={handleStart} activeOpacity={0.85}>
-                  <Text style={styles.startButtonText}>생각 나누기</Text>
-                  <Text style={styles.startArrow}>→</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            )
-          )}
-          <Text style={styles.timeHint}>1~3분이면 충분해요</Text>
-        </View>
-
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -161,169 +84,92 @@ export default function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0A0F1E',
   },
   container: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: HP,
   },
 
-  /* 상단 영역 */
-  topArea: {
-    flex: 2,
-    justifyContent: 'center',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerLeft: {
-    gap: width * 0.005,
-  },
-  appTitle: {
-    fontSize: width * 0.06,
-    fontWeight: '700',
-    color: '#F8FAFC',
-    letterSpacing: -0.5,
-  },
-  dateText: {
-    fontSize: width * 0.035,
-    color: '#64748B',
-  },
-  streakBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  alarmButton: {
+    position: 'absolute',
+    top: height * 0.02,
+    right: HP,
+    width: width * 0.11,
+    height: width * 0.11,
+    borderRadius: width * 0.055,
     backgroundColor: '#1E293B',
-    paddingHorizontal: width * 0.03,
-    paddingVertical: height * 0.008,
-    borderRadius: width * 0.05,
-    gap: width * 0.01,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#334155',
   },
-  streakFire: {
-    fontSize: width * 0.04,
-  },
-  streakCount: {
-    fontSize: width * 0.038,
-    fontWeight: '700',
-    color: '#F59E0B',
+  alarmIcon: {
+    fontSize: width * 0.042,
   },
 
-  /* 콘텐츠 영역 */
-  contentArea: {
-    flex: 6,
-  },
-  loadingContainer: {
-    flex: 1,
+  titleArea: {
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: height * 0.02,
-  },
-  loadingText: {
-    color: '#64748B',
-    fontSize: width * 0.04,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    gap: height * 0.02,
-    paddingBottom: height * 0.02,
-  },
-  scenarioCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: width * 0.04,
-    padding: width * 0.05,
-    borderWidth: 1,
-    borderColor: '#334155',
     gap: height * 0.016,
+    marginBottom: height * 0.1,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: width * 0.02,
-  },
-  dot: {
-    width: width * 0.02,
-    height: width * 0.02,
-    borderRadius: width * 0.01,
-    backgroundColor: '#6366F1',
-  },
-  cardLabel: {
-    fontSize: width * 0.03,
-    fontWeight: '700',
+  eyebrow: {
+    fontSize: width * 0.032,
     color: '#6366F1',
-    letterSpacing: 1,
+    letterSpacing: 3,
     textTransform: 'uppercase',
+    fontWeight: '600',
   },
-  scenarioText: {
-    fontSize: width * 0.04,
-    color: '#E2E8F0',
-    lineHeight: width * 0.065,
-  },
-  hintText: {
+  title: {
+    fontSize: width * 0.16,
+    fontWeight: '800',
+    color: '#F8FAFC',
     textAlign: 'center',
-    fontSize: width * 0.035,
+    lineHeight: width * 0.17,
+    letterSpacing: -2,
+  },
+  subtitle: {
+    fontSize: width * 0.038,
     color: '#475569',
+    textAlign: 'center',
+    lineHeight: width * 0.062,
   },
 
-  /* 하단 버튼 영역 */
-  bottomArea: {
-    flex: 2,
+  buttonArea: {
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: height * 0.012,
+    position: 'absolute',
+    bottom: height * 0.1,
+  },
+  glowRing: {
+    position: 'absolute',
+    width: width * 0.82,
+    height: width * 0.175,
+    borderRadius: width * 0.045,
+    backgroundColor: '#6366F1',
+    transform: [{ scaleX: 1.04 }, { scaleY: 1.3 }],
   },
   startButton: {
+    width: width * 0.8,
     backgroundColor: '#6366F1',
-    borderRadius: width * 0.035,
-    paddingVertical: height * 0.022,
-    paddingHorizontal: width * 0.06,
+    borderRadius: width * 0.04,
+    paddingVertical: height * 0.025,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: width * 0.02,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
+    gap: width * 0.03,
   },
-  startButtonText: {
-    fontSize: width * 0.045,
+  startText: {
+    fontSize: width * 0.048,
     fontWeight: '700',
     color: '#FFFFFF',
+    letterSpacing: -0.5,
   },
   startArrow: {
-    fontSize: width * 0.045,
+    fontSize: width * 0.048,
     color: '#FFFFFF',
     fontWeight: '700',
-  },
-  completedBanner: {
-    backgroundColor: '#14532D',
-    borderRadius: width * 0.035,
-    paddingVertical: height * 0.022,
-    paddingHorizontal: width * 0.06,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: width * 0.025,
-    borderWidth: 1,
-    borderColor: '#166534',
-  },
-  completedIcon: {
-    fontSize: width * 0.045,
-    color: '#4ADE80',
-  },
-  completedText: {
-    fontSize: width * 0.04,
-    fontWeight: '600',
-    color: '#4ADE80',
-  },
-  timeHint: {
-    textAlign: 'center',
-    fontSize: width * 0.035,
-    color: '#334155',
   },
 });
