@@ -9,22 +9,21 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  ScrollView,
+  Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList, Message, StreakData } from '../types';
 import MessageBubble from '../components/MessageBubble';
 import TypingIndicator from '../components/TypingIndicator';
-import { openTeacherSession, teacherReply } from '../services/claude';
+import { generateDailyScenario, openCharacterSession, characterReply } from '../services/claude';
 
-type ChatScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Chat'>;
-type ChatScreenRouteProp = RouteProp<RootStackParamList, 'Chat'>;
+type ChatScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Chat' | 'Ending'>;
 
 interface Props {
   navigation: ChatScreenNavigationProp;
-  route: ChatScreenRouteProp;
 }
 
 const { width, height } = Dimensions.get('window');
@@ -38,40 +37,76 @@ function todayString(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function ChatScreen({ navigation, route }: Props) {
-  const { scenario } = route.params;
+// ①②③④⑤ 형식의 선택지 파싱
+function parseChoices(text: string): string[] {
+  const choices: string[] = [];
+  for (const line of text.split('\n')) {
+    const match = line.match(/^[①②③④⑤]\s*(.+)/);
+    if (match) choices.push(match[1].trim());
+  }
+  return choices;
+}
+
+export default function ChatScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const [scenario, setScenario] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  const [isTyping, setIsTyping] = useState(true);
+  const [isTyping, setIsTyping] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [streakRecorded, setStreakRecorded] = useState(false);
-  const [scenarioExpanded, setScenarioExpanded] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // 로딩 애니메이션
+  const dot1 = useRef(new Animated.Value(0.3)).current;
+  const dot2 = useRef(new Animated.Value(0.3)).current;
+  const dot3 = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
   }, []);
 
-  // 교사 수업 자동 시작
   useEffect(() => {
-    openTeacherSession(scenario)
-      .then(opening => {
+    const pulse = (dot: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dot, { toValue: 1, duration: 380, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.3, duration: 380, useNativeDriver: true }),
+        ])
+      ).start();
+    pulse(dot1, 0);
+    pulse(dot2, 180);
+    pulse(dot3, 360);
+  }, []);
+
+  // 시나리오 생성 → 탐정 오프닝
+  useEffect(() => {
+    (async () => {
+      try {
+        const text = await generateDailyScenario();
+        setScenario(text);
+        setIsTyping(true);
+        setLoading(false);
+        const opening = await openCharacterSession(text);
         setMessages([{
           id: generateId(),
           role: 'assistant',
           content: opening,
           timestamp: new Date(),
         }]);
-      })
-      .catch(() => {
+      } catch {
+        setLoading(false);
         setMessages([{
           id: generateId(),
           role: 'assistant',
-          content: '이 사건, 어떻게 생각하세요? 처음 떠오른 생각을 말해보세요.',
+          content: '잠깐, 신호가 끊겼어.\n다시 켜봐.',
           timestamp: new Date(),
         }]);
-      })
-      .finally(() => setIsTyping(false));
+      } finally {
+        setIsTyping(false);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -99,8 +134,8 @@ export default function ChatScreen({ navigation, route }: Props) {
     } catch {}
   };
 
-  const sendMessage = useCallback(async () => {
-    const text = inputText.trim();
+  const sendMessage = useCallback(async (overrideText?: string) => {
+    const text = (overrideText ?? inputText).trim();
     if (!text || isTyping) return;
 
     const userMessage: Message = {
@@ -117,7 +152,7 @@ export default function ChatScreen({ navigation, route }: Props) {
     recordStreak();
 
     try {
-      const reply = await teacherReply(scenario, updatedMessages);
+      const reply = await characterReply(scenario, updatedMessages);
       setMessages(prev => [
         ...prev,
         { id: generateId(), role: 'assistant', content: reply, timestamp: new Date() },
@@ -125,7 +160,7 @@ export default function ChatScreen({ navigation, route }: Props) {
     } catch {
       setMessages(prev => [
         ...prev,
-        { id: generateId(), role: 'assistant', content: '오류가 발생했습니다. 다시 시도해주세요.', timestamp: new Date() },
+        { id: generateId(), role: 'assistant', content: '잠깐, 신호가 끊겼어. 다시 시도해봐.', timestamp: new Date() },
       ]);
     } finally {
       setIsTyping(false);
@@ -136,37 +171,60 @@ export default function ChatScreen({ navigation, route }: Props) {
     <MessageBubble message={item} userName="나" />
   );
 
+  // 마지막 AI 메시지에서 선택지 파싱
+  const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
+  const choices = lastAssistantMsg && !isTyping ? parseChoices(lastAssistantMsg.content) : [];
+
+  // 유저 메시지 3개 이상이면 결말 버튼 노출
+  const userMsgCount = messages.filter(m => m.role === 'user').length;
+  const canShowEnding = userMsgCount >= 3 && !loading;
+
   const webStyle = Platform.OS === 'web'
     ? { paddingTop: insets.top, paddingBottom: insets.bottom } as const
     : undefined;
 
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.safeArea, webStyle]}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingTitle}>💬</Text>
+          <Text style={styles.loadingLabel}>연결 중...</Text>
+          <View style={styles.dotsRow}>
+            {[dot1, dot2, dot3].map((dot, i) => (
+              <Animated.View key={i} style={[styles.dot, { opacity: dot }]} />
+            ))}
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.safeArea, webStyle]}>
 
-      {/* 상단 — 헤더 + 시나리오 배너 */}
-      <View style={styles.topArea}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Text style={styles.backArrow}>‹</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>사고력 수업</Text>
-          <View style={styles.headerRight} />
-        </View>
-
-        <TouchableOpacity
-          style={styles.scenarioBanner}
-          onPress={() => setScenarioExpanded(v => !v)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.bannerDot} />
-          <Text
-            style={styles.bannerText}
-            numberOfLines={scenarioExpanded ? undefined : 2}
-          >
-            {scenario}
-          </Text>
-          <Text style={styles.bannerToggle}>{scenarioExpanded ? '▲' : '▼'}</Text>
+      {/* 헤더 */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <View style={styles.avatarDot} />
+          <View>
+            <Text style={styles.headerName}>알 수 없음</Text>
+            <Text style={styles.headerStatus}>온라인</Text>
+          </View>
+        </View>
+        {canShowEnding ? (
+          <TouchableOpacity
+            style={styles.endingBtn}
+            onPress={() => navigation.navigate('Ending', { scenario, messages })}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.endingBtnText}>결말</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerRight} />
+        )}
       </View>
 
       {/* 채팅 + 입력 */}
@@ -186,10 +244,32 @@ export default function ChatScreen({ navigation, route }: Props) {
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
+        {/* 선택지 버튼 */}
+        {choices.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.choicesScroll}
+            contentContainerStyle={styles.choicesContent}
+          >
+            {choices.map((choice, i) => (
+              <TouchableOpacity
+                key={i}
+                style={styles.choiceBtn}
+                onPress={() => sendMessage(`${['①', '②', '③', '④', '⑤'][i]} ${choice}`)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.choiceNum}>{['①', '②', '③', '④', '⑤'][i]}</Text>
+                <Text style={styles.choiceText}>{choice}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
         <View style={styles.inputArea}>
           <TextInput
             style={styles.textInput}
-            placeholder="생각을 자유롭게 말해주세요..."
+            placeholder="메시지..."
             placeholderTextColor="#475569"
             value={inputText}
             onChangeText={setInputText}
@@ -198,8 +278,8 @@ export default function ChatScreen({ navigation, route }: Props) {
             returnKeyType="send"
             blurOnSubmit={false}
             onKeyPress={({ nativeEvent }) => {
-              const event = nativeEvent as typeof nativeEvent & { shiftKey?: boolean };
-              if (event.key === 'Enter' && !event.shiftKey) sendMessage();
+              const event = nativeEvent as typeof nativeEvent & { shiftKey?: boolean; isComposing?: boolean };
+              if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) sendMessage();
             }}
           />
           <TouchableOpacity
@@ -216,7 +296,7 @@ export default function ChatScreen({ navigation, route }: Props) {
                 }),
               },
             ]}
-            onPress={sendMessage}
+            onPress={() => sendMessage()}
             disabled={!inputText.trim() || isTyping}
             activeOpacity={0.7}
           >
@@ -235,16 +315,37 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
   },
 
-  topArea: {
-    flex: 2,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: height * 0.02,
   },
+  loadingTitle: {
+    fontSize: width * 0.12,
+    marginBottom: height * 0.008,
+  },
+  loadingLabel: {
+    fontSize: width * 0.036,
+    color: '#475569',
+    letterSpacing: 1,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    gap: width * 0.028,
+  },
+  dot: {
+    width: width * 0.02,
+    height: width * 0.02,
+    borderRadius: width * 0.01,
+    backgroundColor: '#6366F1',
+  },
+
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: HP,
-    paddingVertical: height * 0.012,
+    paddingVertical: height * 0.014,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
   },
@@ -261,48 +362,50 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     lineHeight: width * 0.075,
   },
-  headerTitle: {
+  headerCenter: {
     flex: 1,
-    textAlign: 'center',
-    fontSize: width * 0.04,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: width * 0.025,
+  },
+  avatarDot: {
+    width: width * 0.09,
+    height: width * 0.09,
+    borderRadius: width * 0.045,
+    backgroundColor: '#1E293B',
+    borderWidth: 2,
+    borderColor: '#22C55E',
+  },
+  headerName: {
+    fontSize: width * 0.038,
     fontWeight: '700',
     color: '#F1F5F9',
+  },
+  headerStatus: {
+    fontSize: width * 0.028,
+    color: '#22C55E',
   },
   headerRight: {
     width: width * 0.08,
   },
-
-  scenarioBanner: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#1E293B',
-    paddingHorizontal: HP,
-    paddingVertical: height * 0.015,
-    gap: width * 0.025,
+  endingBtn: {
+    paddingHorizontal: width * 0.03,
+    paddingVertical: height * 0.007,
+    borderRadius: width * 0.025,
+    borderWidth: 1,
+    borderColor: '#6366F1',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  bannerDot: {
-    width: width * 0.015,
-    height: width * 0.015,
-    borderRadius: width * 0.0075,
-    backgroundColor: '#6366F1',
-    marginTop: height * 0.005,
-    flexShrink: 0,
-  },
-  bannerText: {
-    flex: 1,
-    fontSize: width * 0.033,
-    color: '#94A3B8',
-    lineHeight: width * 0.052,
-  },
-  bannerToggle: {
-    fontSize: width * 0.028,
-    color: '#475569',
-    flexShrink: 0,
+  endingBtnText: {
+    fontSize: width * 0.03,
+    color: '#6366F1',
+    fontWeight: '700',
   },
 
   mainArea: {
-    flex: 8,
+    flex: 1,
   },
   messageList: {
     flex: 1,
@@ -312,6 +415,43 @@ const styles = StyleSheet.create({
     paddingVertical: height * 0.02,
     paddingBottom: height * 0.01,
   },
+
+  choicesScroll: {
+    maxHeight: height * 0.14,
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+  },
+  choicesContent: {
+    paddingHorizontal: HP,
+    paddingVertical: height * 0.012,
+    gap: width * 0.025,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  choiceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    borderRadius: width * 0.06,
+    paddingHorizontal: width * 0.04,
+    paddingVertical: height * 0.012,
+    borderWidth: 1,
+    borderColor: '#334155',
+    gap: width * 0.02,
+    maxWidth: width * 0.7,
+  },
+  choiceNum: {
+    fontSize: width * 0.04,
+    color: '#6366F1',
+    fontWeight: '700',
+    flexShrink: 0,
+  },
+  choiceText: {
+    fontSize: width * 0.036,
+    color: '#CBD5E1',
+    flexShrink: 1,
+  },
+
   inputArea: {
     flexDirection: 'row',
     alignItems: 'flex-end',

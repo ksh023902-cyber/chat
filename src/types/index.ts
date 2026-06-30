@@ -24,5 +24,7 @@ export type RootStackParamList = {
   Home: undefined;
   Alarm: undefined;
   Scenario: undefined;
-  Chat: { scenario: string };
+  ScenarioDetail: { scenario: string };
+  Chat: undefined;
+  Ending: { scenario: string; messages: Message[] };
 };

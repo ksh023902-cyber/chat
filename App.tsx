@@ -9,6 +9,8 @@ import HomeScreen from './src/screens/HomeScreen';
 import AlarmScreen from './src/screens/AlarmScreen';
 import ScenarioScreen from './src/screens/ScenarioScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import ScenarioDetailScreen from './src/screens/ScenarioDetailScreen';
+import EndingScreen from './src/screens/EndingScreen';
 import { setupNotificationHandler } from './src/services/notifications';
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -41,7 +43,9 @@ export default function App() {
         <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Alarm" component={AlarmScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Scenario" component={ScenarioScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="ScenarioDetail" component={ScenarioDetailScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Ending" component={EndingScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

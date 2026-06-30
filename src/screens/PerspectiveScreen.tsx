@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList, Perspective } from '../types';
@@ -48,6 +48,7 @@ export default function PerspectiveScreen({ navigation, route }: { navigation: N
   const characters = parseCharacters(scenario);
   const [opinions, setOpinions] = useState<string[]>(characters.map(() => ''));
   const [modalVisible, setModalVisible] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const setOpinion = (i: number, text: string) => {
     setOpinions(prev => { const next = [...prev]; next[i] = text; return next; });
@@ -63,8 +64,13 @@ export default function PerspectiveScreen({ navigation, route }: { navigation: N
     navigation.navigate('Chat', { scenario, perspectives });
   };
 
+  const Wrapper = Platform.OS === 'web' ? ScrollView : SafeAreaView;
+  const wrapperProps = Platform.OS === 'web'
+    ? { style: styles.safeArea, contentContainerStyle: { flexGrow: 1, paddingTop: insets.top }, showsVerticalScrollIndicator: false }
+    : { style: styles.safeArea };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <Wrapper {...wrapperProps}>
       {/* 헤더 */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
@@ -159,7 +165,7 @@ export default function PerspectiveScreen({ navigation, route }: { navigation: N
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+    </Wrapper>
   );
 }
 

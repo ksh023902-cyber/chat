@@ -36,7 +36,7 @@ export default function HomeScreen({ navigation }: { navigation: HomeScreenNavig
   }, []);
 
   const handleStart = () => {
-    navigation.navigate('Scenario');
+    navigation.navigate('Chat');
   };
 
   const webStyle = Platform.OS === 'web'
@@ -58,9 +58,9 @@ export default function HomeScreen({ navigation }: { navigation: HomeScreenNavig
 
         {/* 중앙 타이틀 */}
         <View style={styles.titleArea}>
-          <Text style={styles.eyebrow}>매일 하나의 사건</Text>
-          <Text style={styles.title}>생각하는{'\n'}힘</Text>
-          <Text style={styles.subtitle}>글로만 읽어도 머릿속에{'\n'}영상이 그려집니다</Text>
+          <Text style={styles.eyebrow}>🔍 새 사건 파일 도착</Text>
+          <Text style={styles.title}>탐정{'\n'}사무소</Text>
+          <Text style={styles.subtitle}>사람들이 지나치는 이상함을{'\n'}발견하는 사람들</Text>
         </View>
 
         {/* 시작 버튼 */}
@@ -71,7 +71,7 @@ export default function HomeScreen({ navigation }: { navigation: HomeScreenNavig
             onPress={handleStart}
             activeOpacity={0.85}
           >
-            <Text style={styles.startText}>오늘의 사건 시작</Text>
+            <Text style={styles.startText}>파일 열기</Text>
             <Text style={styles.startArrow}>→</Text>
           </TouchableOpacity>
         </View>

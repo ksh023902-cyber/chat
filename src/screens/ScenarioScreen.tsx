@@ -98,6 +98,15 @@ export default function ScenarioScreen({ navigation }: { navigation: ScenarioScr
       });
   }, []);
 
+  const handleBack = () => {
+    if (currentIdx > 0) {
+      setCurrentIdx(i => i - 1);
+      setTimeout(animateIn, 30);
+    } else {
+      navigation.goBack();
+    }
+  };
+
   const handleNext = () => {
     if (currentIdx < scenes.length - 1) {
       setCurrentIdx(i => i + 1);
@@ -144,8 +153,11 @@ export default function ScenarioScreen({ navigation }: { navigation: ScenarioScr
   return (
     <SafeAreaView style={styles.safeArea}>
 
-      {/* 닫기 */}
+      {/* 상단 바 */}
       <View style={styles.topBar}>
+        <TouchableOpacity style={styles.closeBtn} onPress={handleBack} activeOpacity={0.7}>
+          <Text style={styles.backText}>‹</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
           <Text style={styles.closeText}>✕</Text>
         </TouchableOpacity>
@@ -252,7 +264,7 @@ const styles = StyleSheet.create({
 
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     paddingHorizontal: HP,
     paddingTop: height * 0.01,
   },
@@ -263,6 +275,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  backText: {
+    fontSize: width * 0.055,
+    color: '#64748B',
+    lineHeight: width * 0.07,
   },
   closeText: {
     fontSize: width * 0.036,
