@@ -3,6 +3,8 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  // 통신 실패 안내 등 실제 대화가 아닌 메시지 — AI 요청 이력에서 제외됨
+  isError?: boolean;
 }
 
 export interface DailyScenario {
@@ -25,6 +27,7 @@ export type RootStackParamList = {
   Alarm: undefined;
   Scenario: undefined;
   ScenarioDetail: { scenario: string };
-  Chat: undefined;
+  Perspective: { scenario: string };
+  Chat: { scenario?: string; perspectives?: Perspective[] } | undefined;
   Ending: { scenario: string; messages: Message[] };
 };

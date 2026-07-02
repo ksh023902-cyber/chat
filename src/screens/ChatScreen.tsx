@@ -95,13 +95,16 @@ export default function ChatScreen({ navigation }: Props) {
           content: opening,
           timestamp: new Date(),
         }]);
-      } catch {
+      } catch (e) {
         setLoading(false);
         setMessages([{
           id: generateId(),
           role: 'assistant',
-          content: '잠깐, 신호가 끊겼어.\n다시 켜봐.',
+          content: e instanceof Error && e.message.startsWith('API 키 없음')
+            ? `⚠️ ${e.message}`
+            : '잠깐, 신호가 끊겼어.\n다시 켜봐.',
           timestamp: new Date(),
+          isError: true,
         }]);
       } finally {
         setIsTyping(false);
@@ -157,10 +160,18 @@ export default function ChatScreen({ navigation }: Props) {
         ...prev,
         { id: generateId(), role: 'assistant', content: reply, timestamp: new Date() },
       ]);
-    } catch {
+    } catch (e) {
       setMessages(prev => [
         ...prev,
-        { id: generateId(), role: 'assistant', content: '잠깐, 신호가 끊겼어. 다시 시도해봐.', timestamp: new Date() },
+        {
+          id: generateId(),
+          role: 'assistant',
+          content: e instanceof Error && e.message.startsWith('API 키 없음')
+            ? `⚠️ ${e.message}`
+            : '잠깐, 신호가 끊겼어. 다시 시도해봐.',
+          timestamp: new Date(),
+          isError: true,
+        },
       ]);
     } finally {
       setIsTyping(false);
