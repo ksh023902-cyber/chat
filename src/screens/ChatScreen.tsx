@@ -96,12 +96,15 @@ export default function ChatScreen({ navigation }: Props) {
           timestamp: new Date(),
         }]);
       } catch (e) {
+        console.error('[ChatScreen] 초기화 실패:', e);
         setLoading(false);
         setMessages([{
           id: generateId(),
           role: 'assistant',
           content: e instanceof Error && e.message.startsWith('API 키 없음')
             ? `⚠️ ${e.message}`
+            : e instanceof Error && e.message.includes('429')
+            ? '잠깐, 신호가 끊겼어.\n잠시 후 다시 켜봐. (요청 한도 초과)'
             : '잠깐, 신호가 끊겼어.\n다시 켜봐.',
           timestamp: new Date(),
           isError: true,
@@ -156,11 +159,20 @@ export default function ChatScreen({ navigation }: Props) {
 
     try {
       const reply = await characterReply(scenario, updatedMessages);
+      // LLM이 오염 패턴을 생성한 경우 isError로 마킹 → 다음 히스토리 전송에서 자동 차단
+      const isContaminated = /신호가 끊겼|다시 켜봐|다시 시도해봐/.test(reply);
       setMessages(prev => [
         ...prev,
-        { id: generateId(), role: 'assistant', content: reply, timestamp: new Date() },
+        {
+          id: generateId(),
+          role: 'assistant',
+          content: reply,
+          timestamp: new Date(),
+          ...(isContaminated && { isError: true }),
+        },
       ]);
     } catch (e) {
+      console.error('[ChatScreen] 응답 실패:', e);
       setMessages(prev => [
         ...prev,
         {
@@ -168,6 +180,8 @@ export default function ChatScreen({ navigation }: Props) {
           role: 'assistant',
           content: e instanceof Error && e.message.startsWith('API 키 없음')
             ? `⚠️ ${e.message}`
+            : e instanceof Error && e.message.includes('429')
+            ? '잠깐, 신호가 끊겼어. 잠시 후 다시 시도해봐. (요청 한도 초과)'
             : '잠깐, 신호가 끊겼어. 다시 시도해봐.',
           timestamp: new Date(),
           isError: true,
