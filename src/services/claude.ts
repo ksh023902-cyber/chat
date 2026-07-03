@@ -1,15 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Message } from '../types';
 
-const API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
-const CHAT_MODEL = 'llama-3.3-70b-versatile';
+const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+const CHAT_MODEL = 'gemini-2.0-flash';
+const API_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
 async function apiRequest(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   max_tokens: number,
   temperature: number
 ): Promise<string> {
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -510,7 +511,7 @@ export async function characterReply(
   const assistantCount = chatMessages.filter(m => m.role === 'assistant').length;
   const sentenceLimit = Math.min(assistantCount + 1, 4);
 
-  // Groq API requires messages to start with 'user' role.
+  // Gemini API requires messages to start with 'user' role.
   const apiMessages: { role: 'user' | 'assistant'; content: string }[] =
     chatMessages.length > 0 && chatMessages[0].role === 'assistant'
       ? [{ role: 'user', content: '(대화 시작)' }, ...chatMessages]

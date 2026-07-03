@@ -18,7 +18,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, Message, StreakData } from '../types';
 import MessageBubble from '../components/MessageBubble';
 import TypingIndicator from '../components/TypingIndicator';
-import { generateDailyScenario, openCharacterSession, characterReply } from '../services/claude';
+import { generateDailyScenario, characterReply } from '../services/claude';
 
 type ChatScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Chat' | 'Ending'>;
 
@@ -80,37 +80,17 @@ export default function ChatScreen({ navigation }: Props) {
     pulse(dot3, 360);
   }, []);
 
-  // 시나리오 생성 → 탐정 오프닝
+  // 시나리오 로드 (캐시 우선, API 호출은 캐시 미스 시에만)
+  // openCharacterSession은 첫 메시지 전송 시점으로 지연 (lazy)
   useEffect(() => {
     (async () => {
       try {
         const text = await generateDailyScenario();
         setScenario(text);
-        setIsTyping(true);
-        setLoading(false);
-        const opening = await openCharacterSession(text);
-        setMessages([{
-          id: generateId(),
-          role: 'assistant',
-          content: opening,
-          timestamp: new Date(),
-        }]);
       } catch (e) {
-        console.error('[ChatScreen] 초기화 실패:', e);
-        setLoading(false);
-        setMessages([{
-          id: generateId(),
-          role: 'assistant',
-          content: e instanceof Error && e.message.startsWith('API 키 없음')
-            ? `⚠️ ${e.message}`
-            : e instanceof Error && e.message.includes('429')
-            ? '잠깐, 신호가 끊겼어.\n잠시 후 다시 켜봐. (요청 한도 초과)'
-            : '잠깐, 신호가 끊겼어.\n다시 켜봐.',
-          timestamp: new Date(),
-          isError: true,
-        }]);
+        console.error('[ChatScreen] 시나리오 로드 실패:', e);
       } finally {
-        setIsTyping(false);
+        setLoading(false);
       }
     })();
   }, []);
