@@ -18,7 +18,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, Message, StreakData } from '../types';
 import MessageBubble from '../components/MessageBubble';
 import TypingIndicator from '../components/TypingIndicator';
-import { generateDailyScenario, characterReply } from '../services/claude';
+import { loadCachedScenario, generateDailyScenario, characterReply } from '../services/claude';
 
 type ChatScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Chat' | 'Ending'>;
 
@@ -80,15 +80,19 @@ export default function ChatScreen({ navigation }: Props) {
     pulse(dot3, 360);
   }, []);
 
-  // 시나리오 로드 (캐시 우선, API 호출은 캐시 미스 시에만)
-  // openCharacterSession은 첫 메시지 전송 시점으로 지연 (lazy)
+  // 캐시에서만 시나리오 로드 — API 호출 없음.
+  // 캐시 미스 시 scenario = '' 로 두고 첫 메시지 전송 시 lazy 생성.
+  // StrictMode 이중 실행 방어: mountedRef
+  const mountedRef = useRef(false);
   useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
     (async () => {
       try {
-        const text = await generateDailyScenario();
-        setScenario(text);
+        const cached = await loadCachedScenario();
+        if (cached) setScenario(cached);
       } catch (e) {
-        console.error('[ChatScreen] 시나리오 로드 실패:', e);
+        console.error('[ChatScreen] 캐시 로드 실패:', e);
       } finally {
         setLoading(false);
       }
@@ -138,7 +142,13 @@ export default function ChatScreen({ navigation }: Props) {
     recordStreak();
 
     try {
-      const reply = await characterReply(scenario, updatedMessages);
+      // 캐시 미스였던 경우 첫 메시지 전송 시점에 lazy 생성
+      let activeScenario = scenario;
+      if (!activeScenario) {
+        activeScenario = await generateDailyScenario();
+        setScenario(activeScenario);
+      }
+      const reply = await characterReply(activeScenario, updatedMessages);
       // LLM이 오염 패턴을 생성한 경우 isError로 마킹 → 다음 히스토리 전송에서 자동 차단
       const isContaminated = /신호가 끊겼|다시 켜봐|다시 시도해봐/.test(reply);
       setMessages(prev => [

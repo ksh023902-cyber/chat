@@ -83,7 +83,11 @@ export default function ScenarioScreen({ navigation }: { navigation: ScenarioScr
     ]).start();
   };
 
+  // StrictMode 이중 실행 방어: mountedRef
+  const mountedRef = useRef(false);
   useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
     generateDailyScenario()
       .then(text => {
         setFullScenario(text);

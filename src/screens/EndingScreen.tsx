@@ -87,7 +87,11 @@ export default function EndingScreen({ navigation, route }: Props) {
     pulse(dot3, 360);
   }, []);
 
+  // StrictMode 이중 실행 방어: mountedRef
+  const mountedRef = useRef(false);
   useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
     generateEnding(scenario, messages)
       .then(text => {
         setEndingText(text);

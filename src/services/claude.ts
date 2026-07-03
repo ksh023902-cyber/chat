@@ -1,25 +1,43 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Message } from '../types';
+import { GEMINI_API_KEY, GEMINI_API_URL, GEMINI_CHAT_MODEL } from './apiConfig';
 
-const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
-const CHAT_MODEL = 'gemini-2.0-flash';
-const API_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const API_KEY = GEMINI_API_KEY;
+const CHAT_MODEL = GEMINI_CHAT_MODEL;
+const API_URL = GEMINI_API_URL;
 
 async function apiRequest(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   max_tokens: number,
   temperature: number
 ): Promise<string> {
+  // [진단] 키 앞 8자·길이·URL 확인 — 401 반복 시 이 로그로 키 형식을 먼저 점검
+  console.log(
+    '[apiRequest] 키:', API_KEY ? API_KEY.slice(0, 8) : '(없음)',
+    '길이:', API_KEY?.length ?? 0,
+    'URL:', API_URL
+  );
+
+  const body = { model: CHAT_MODEL, messages, max_tokens, temperature };
+
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${API_KEY}`,
     },
-    body: JSON.stringify({ model: CHAT_MODEL, messages, max_tokens, temperature }),
+    body: JSON.stringify(body),
   });
   const data = await response.json();
   if (!response.ok) {
+    // 401/403은 키 문제이므로 message 필드를 별도 줄로 출력
+    if (response.status === 401 || response.status === 403) {
+      console.error(`[apiRequest] ${response.status} 인증 실패`);
+      console.error('[apiRequest] error.message:', data?.error?.message ?? '(없음)');
+      console.error('[apiRequest] error.status:', data?.error?.status ?? '(없음)');
+    } else if (response.status !== 429) {
+      console.error(`[claude] ERROR ${response.status} BODY:`, JSON.stringify(data, null, 2));
+    }
     throw new Error(data.error?.message ?? `API error ${response.status}`);
   }
   return data.choices?.[0]?.message?.content?.trim() ?? '';
@@ -349,6 +367,18 @@ function todayKey(): string {
   return `${new Date().toISOString().slice(0, 10)}_${index}`;
 }
 
+// 캐시만 읽는다 — API 호출 없음. 없으면 null 반환.
+export async function loadCachedScenario(): Promise<string | null> {
+  try {
+    const cached = await AsyncStorage.getItem(SCENARIO_CACHE_KEY);
+    if (cached) {
+      const { key, content } = JSON.parse(cached);
+      if (key === todayKey() && content) return content;
+    }
+  } catch {}
+  return null;
+}
+
 export async function generateDailyScenario(): Promise<string> {
   // 오늘 이미 생성한 시나리오가 있으면 캐시에서 반환
   try {
@@ -469,7 +499,50 @@ type ChatParams = {
   temperature: number;
 };
 
+// 모든 호출 경로가 반드시 이 함수를 거쳐 단일 system 메시지를 생성한다.
+// 조립 순서: 캐릭터/규칙 프롬프트 → 모드 규칙 → 상황 정보
+type SystemPromptMode =
+  | { kind: 'session' }
+  | { kind: 'reply'; sentenceLimit: number; scenario: string };
+
+function buildSystemPrompt(character: Character, mode: SystemPromptMode): string {
+  const persona = buildPersonaSystemPrompt(character);
+  if (mode.kind === 'session') {
+    return (
+      persona +
+      '\n\n[첫 메시지 제한] 반드시 1문장만. 마침표 또는 물음표 하나로 끝. 2문장 이상 절대 금지.'
+    );
+  }
+  return (
+    persona +
+    `\n\n[이번 응답 문장 수 제한] 최대 ${mode.sentenceLimit}문장. 절대 초과 금지.` +
+    `\n\n[사건 내용]\n${mode.scenario}`
+  );
+}
+
+// 전송 직전 body 검증 — 위반 시 콘솔 경고 (재발 방지)
+function warnIfInvalidBody(
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+): void {
+  const systemCount = messages.filter((m) => m.role === 'system').length;
+  if (systemCount !== 1) {
+    console.warn(`[claude] WARN: system 메시지 수 이상 (${systemCount}개, 1개여야 함)`);
+  }
+  messages.forEach((m, i) => {
+    if (!m.content || m.content.trim() === '') {
+      console.warn(`[claude] WARN: index ${i} (${m.role}) content 비어 있음`);
+    }
+  });
+  const nonSystem = messages.filter((m) => m.role !== 'system');
+  for (let i = 1; i < nonSystem.length; i++) {
+    if (nonSystem[i].role === nonSystem[i - 1].role) {
+      console.warn(`[claude] WARN: 연속 ${nonSystem[i].role} 메시지 (non-system index ${i})`);
+    }
+  }
+}
+
 async function chatCompletion(params: ChatParams): Promise<string> {
+  warnIfInvalidBody(params.messages);
   return apiRequest(params.messages, params.max_tokens, params.temperature);
 }
 
@@ -478,8 +551,7 @@ export async function openCharacterSession(scenario: string): Promise<string> {
 
   return chatCompletion({
     messages: [
-      { role: 'system', content: buildPersonaSystemPrompt(character) },
-      { role: 'system', content: '[첫 메시지 제한] 반드시 1문장만. 마침표 또는 물음표 하나로 끝. 2문장 이상 절대 금지.' },
+      { role: 'system', content: buildSystemPrompt(character, { kind: 'session' }) },
       {
         role: 'user',
         content: `[사건 내용]\n${scenario}\n\n첫 메시지를 써라.\n- 사건 속 인물 이름으로 시작 (예: "너 민재 기억나?" / "민재 얘기 들었어?" — 네 캐릭터 말투로)\n- 가장 이상하거나 충격적인 디테일 딱 하나만 담아\n- 유저가 "뭔데?" "걔 왜?"로 바로 답하고 싶게 끝내\n반드시 1문장만. ${character.emoji} 로 시작.`,
@@ -488,6 +560,22 @@ export async function openCharacterSession(scenario: string): Promise<string> {
     max_tokens: 80,
     temperature: 0.9,
   });
+}
+
+// 필터링 후 연속 동일 role 메시지를 줄바꿈으로 병합한다.
+function mergeConsecutiveRoles(
+  messages: { role: 'user' | 'assistant'; content: string }[]
+): { role: 'user' | 'assistant'; content: string }[] {
+  const result: { role: 'user' | 'assistant'; content: string }[] = [];
+  for (const msg of messages) {
+    const last = result[result.length - 1];
+    if (last && last.role === msg.role) {
+      last.content += '\n' + msg.content;
+    } else {
+      result.push({ role: msg.role, content: msg.content });
+    }
+  }
+  return result;
 }
 
 export async function characterReply(
@@ -502,6 +590,7 @@ export async function characterReply(
   const chatMessages = messages
     .filter((msg) => !msg.isError)
     .filter((msg) => !(msg.role === 'assistant' && CONTAMINATION_PATTERN.test(msg.content)))
+    .filter((msg) => msg.content != null && msg.content.trim() !== '')
     .map((msg) => ({
       role: msg.role as 'user' | 'assistant',
       content: msg.content,
@@ -512,16 +601,20 @@ export async function characterReply(
   const sentenceLimit = Math.min(assistantCount + 1, 4);
 
   // Gemini API requires messages to start with 'user' role.
-  const apiMessages: { role: 'user' | 'assistant'; content: string }[] =
+  let apiMessages: { role: 'user' | 'assistant'; content: string }[] =
     chatMessages.length > 0 && chatMessages[0].role === 'assistant'
       ? [{ role: 'user', content: '(대화 시작)' }, ...chatMessages]
       : chatMessages;
 
+  // 필터링 후 연속 동일 role 병합
+  apiMessages = mergeConsecutiveRoles(apiMessages);
+
   return chatCompletion({
     messages: [
-      { role: 'system', content: buildPersonaSystemPrompt(character) },
-      { role: 'system', content: `[사건 내용]\n${scenario}` },
-      { role: 'system', content: `[이번 응답 문장 수 제한] 최대 ${sentenceLimit}문장. 절대 초과 금지.` },
+      {
+        role: 'system',
+        content: buildSystemPrompt(character, { kind: 'reply', sentenceLimit, scenario }),
+      },
       ...apiMessages,
     ],
     max_tokens: Math.min(sentenceLimit * 70, 200),
