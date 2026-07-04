@@ -12,10 +12,11 @@ export const GEMINI_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/models';
 export const GEMINI_CHAT_MODEL = 'gemini-flash-latest';
 
-// 어떤 라이브러리도 건드리기 전 모듈 로드 시점의 fetch를 포착한다.
-// SDK·폴리필이 global.fetch를 나중에 패치해도 이 참조는 오염되지 않는다.
+// 모듈 로드 시점의 fetch를 포착하되, window/global에 바인딩해 this 유실을 방지한다.
+// fetch를 변수로 추출할 때 this 컨텍스트가 끊기면 브라우저에서 options가 무시된다.
 // eslint-disable-next-line no-undef
-export const RAW_FETCH: typeof fetch = (global as any).fetch ?? fetch;
+const _g = (typeof globalThis !== 'undefined' ? globalThis : global) as any;
+export const RAW_FETCH: typeof fetch = (_g.fetch ?? fetch).bind(_g);
 
 // 앱 시작 시 키 형식 경고 (dev 빌드에서만)
 if (__DEV__) {

@@ -4,7 +4,10 @@
       "Bash(pkill -f \"expo start\")",
       "Bash(npm uninstall:*)",
       "Bash(npm install:*)",
-      "WebFetch(domain:novela.so)"
+      "WebFetch(domain:novela.so)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(npx tsc *)"
     ]
   }
 }
