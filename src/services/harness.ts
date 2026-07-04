@@ -1,4 +1,4 @@
-// harness.ts — 조립·검증·호출 (Groq/Gemini OpenAI 호환 엔드포인트 기준)
+// harness.ts — 조립·검증·호출 (Gemini 네이티브 REST API)
 import {
   TEMPLATES,
   CHARACTERS,
@@ -7,6 +7,8 @@ import {
   CRISIS_MESSAGE,
   CRISIS_KEYWORDS,
 } from './prompts';
+import { messagesToGeminiFormat } from './claude';
+import { RAW_FETCH } from './apiConfig';
 
 export type ReactionType = 'reaction' | 'ratio';
 export type CharacterId = 'uncle' | 'kid' | 'detective' | 'teacher' | 'friend';
@@ -112,19 +114,38 @@ export async function generateReaction(
   return { text: '', crisis: false };
 }
 
-// ── 5. API 호출 (OpenAI 호환: Groq / Gemini 둘 다 이 형식 지원) ──
+// ── 5. API 호출 (Gemini 네이티브 REST) ──
 async function callLLM(messages: ChatMessage[], { url, apiKey, model }: ApiConfig): Promise<string> {
-  const res = await fetch(url, {
+  const endpoint = `${url}/${model}:generateContent`;
+  const body = messagesToGeminiFormat(messages, 300, 0.8);
+
+  // RAW_FETCH: SDK 로드 이전에 포착한 네이티브 fetch (전역 오염 불가).
+  // 헤더: Content-Type + X-goog-api-key 두 개만. Authorization 없음.
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    'X-goog-api-key': apiKey,
+  };
+  // [진단] 실제 전송 헤더 전체 출력 (키 마스킹)
+  console.log('[harness] endpoint:', endpoint);
+  console.log('[harness] headers:', JSON.stringify({
+    ...requestHeaders,
+    'X-goog-api-key': apiKey ? `${apiKey.slice(0, 4)}***` : '(없음)',
+  }));
+
+  const res = await RAW_FETCH(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages, max_tokens: 300, temperature: 0.8 }),
+    headers: requestHeaders,
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
-    // 429는 에러 메시지에 상태코드 포함 — 재시도 스킵 판단용
+    const errData = await res.json().catch(() => ({}));
+    if (res.status !== 429) {
+      console.error(`[harness] ERROR ${res.status} BODY:`, JSON.stringify(errData, null, 2));
+    }
     throw new Error(`API 오류: ${res.status}`);
   }
   const data = await res.json();
-  return data.choices[0].message.content.trim();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
 }
 
 /* ── 사용 예 ──
@@ -139,9 +160,9 @@ const result = await generateReaction(
     // ratio 타입일 때: minorityFlag: '소수파 (7%)'
   },
   {
-    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    url: 'https://generativelanguage.googleapis.com/v1beta/models',
     apiKey: process.env.EXPO_PUBLIC_GEMINI_API_KEY,  // AI Studio에서 발급받은 키
-    model: 'gemini-3.5-flash',
+    model: 'gemini-flash-latest',
   }
 );
 console.log(result.text);

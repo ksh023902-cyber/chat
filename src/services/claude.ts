@@ -1,36 +1,66 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Message } from '../types';
-import { GEMINI_API_KEY, GEMINI_API_URL, GEMINI_CHAT_MODEL } from './apiConfig';
+import { GEMINI_API_KEY, GEMINI_API_URL, GEMINI_CHAT_MODEL, RAW_FETCH } from './apiConfig';
 
 const API_KEY = GEMINI_API_KEY;
 const CHAT_MODEL = GEMINI_CHAT_MODEL;
 const API_URL = GEMINI_API_URL;
+
+// ── Gemini 네이티브 메시지 포맷 변환 (공유 함수) ──
+export function messagesToGeminiFormat(
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
+  maxOutputTokens: number,
+  temperature: number
+) {
+  const systemMsg = messages.find((m) => m.role === 'system');
+  const turns = messages.filter((m) => m.role !== 'system');
+  return {
+    ...(systemMsg && { systemInstruction: { parts: [{ text: systemMsg.content }] } }),
+    contents: turns.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    })),
+    generationConfig: { maxOutputTokens, temperature },
+  };
+}
 
 async function apiRequest(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   max_tokens: number,
   temperature: number
 ): Promise<string> {
-  // [진단] 키 앞 8자·길이·URL 확인 — 401 반복 시 이 로그로 키 형식을 먼저 점검
+  const endpoint = `${API_URL}/${CHAT_MODEL}:generateContent`;
+
+  // [진단] 키 마스킹, URL 확인
   console.log(
-    '[apiRequest] 키:', API_KEY ? API_KEY.slice(0, 8) : '(없음)',
+    '[apiRequest] 키:', API_KEY ? `${API_KEY.slice(0, 4)}***` : '(없음)',
     '길이:', API_KEY?.length ?? 0,
-    'URL:', API_URL
+    'endpoint:', endpoint
   );
 
-  const body = { model: CHAT_MODEL, messages, max_tokens, temperature };
+  warnIfInvalidBody(messages);
 
-  const response = await fetch(API_URL, {
+  const body = messagesToGeminiFormat(messages, max_tokens, temperature);
+
+  // RAW_FETCH: SDK 로드 이전에 포착한 네이티브 fetch (전역 오염 불가).
+  // 헤더: Content-Type + X-goog-api-key 두 개만. Authorization 없음.
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    'X-goog-api-key': API_KEY,
+  };
+  // [진단] 실제 전송 헤더 전체 출력 (키 마스킹)
+  console.log('[apiRequest] headers:', JSON.stringify({
+    ...requestHeaders,
+    'X-goog-api-key': API_KEY ? `${API_KEY.slice(0, 4)}***` : '(없음)',
+  }));
+
+  const response = await RAW_FETCH(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${API_KEY}`,
-    },
+    headers: requestHeaders,
     body: JSON.stringify(body),
   });
   const data = await response.json();
   if (!response.ok) {
-    // 401/403은 키 문제이므로 message 필드를 별도 줄로 출력
     if (response.status === 401 || response.status === 403) {
       console.error(`[apiRequest] ${response.status} 인증 실패`);
       console.error('[apiRequest] error.message:', data?.error?.message ?? '(없음)');
@@ -40,7 +70,7 @@ async function apiRequest(
     }
     throw new Error(data.error?.message ?? `API error ${response.status}`);
   }
-  return data.choices?.[0]?.message?.content?.trim() ?? '';
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
 }
 
 // ─────────────────────────────────────────────
@@ -542,7 +572,6 @@ function warnIfInvalidBody(
 }
 
 async function chatCompletion(params: ChatParams): Promise<string> {
-  warnIfInvalidBody(params.messages);
   return apiRequest(params.messages, params.max_tokens, params.temperature);
 }
 
