@@ -20,7 +20,9 @@ export function messagesToGeminiFormat(
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     })),
-    generationConfig: { maxOutputTokens, temperature },
+    // thinkingBudget: 0 — 모델이 내부 "생각" 토큰에 maxOutputTokens를 다 써버려
+    // 실제 응답이 빈 문자열로 잘리는 문제 방지 (짧은 대화 응답에는 사고 과정 불필요)
+    generationConfig: { maxOutputTokens, temperature, thinkingConfig: { thinkingBudget: 0 } },
   };
 }
 
