@@ -36,7 +36,9 @@ export default function HomeScreen({ navigation }: { navigation: HomeScreenNavig
   }, []);
 
   const handleStart = () => {
-    navigation.navigate('Chat');
+    // 'Chat'은 STEP 6에서 제거됨 — 이 화면 자체가 이제 도달 불가능한 레거시라
+    // 혹시 열리더라도 죽지 않도록 새 진입점(Main)으로 보낸다.
+    navigation.navigate('Main');
   };
 
   const webStyle = Platform.OS === 'web'

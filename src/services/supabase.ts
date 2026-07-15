@@ -146,3 +146,117 @@ export async function fetchOppositePerspectiveAnswer(
     return null;
   }
 }
+
+// ─────────────────────────────────────────────
+// 기록 앱 전환 — 오늘의 질문 (questions 테이블, 아직 스키마 미생성)
+// ─────────────────────────────────────────────
+
+export interface QuestionRecord {
+  id: string;
+  day_number: number;
+  category: string;
+  title: string;
+  situation: string;
+  question: string;
+  tone: 'light' | 'normal' | 'deep';
+}
+
+// 서비스 시작일 기준 day_number 앵커. 나중에 questions 테이블 생성 시점에 맞춰 조정.
+const SERVICE_START_DATE = '2026-07-15';
+
+export function getTodayDayNumber(): number {
+  const start = new Date(SERVICE_START_DATE + 'T00:00:00Z').getTime();
+  const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z').getTime();
+  return Math.floor((today - start) / 86400000) + 1;
+}
+
+// questions 테이블이 아직 없거나 Supabase 미설정이면 조용히 null — 화면은 하드코딩 폴백 질문을 쓴다.
+export async function fetchTodayQuestion(dayNumber: number): Promise<QuestionRecord | null> {
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .from('questions')
+      .select('*')
+      .eq('day_number', dayNumber)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data as QuestionRecord;
+  } catch (e) {
+    if (__DEV__) console.warn('[supabase] fetchTodayQuestion 실패(무시, 하드코딩 폴백 사용)', e);
+    return null;
+  }
+}
+
+export interface EntryRecord {
+  id: string;
+  user_id: string;
+  question_id: string;
+  situation: string;
+  question: string;
+  content: string;
+  ai_response?: string | null;
+  created_at: string;
+}
+
+// entries 테이블에 오늘의 기록을 저장한다. 아직 auth 연동이 없어 user_id 자리에
+// 익명 device_id를 대신 쓴다(향후 실제 계정 시스템 도입 시 교체). situation/question을
+// question_id와 함께 그대로 저장해둬 캘린더 화면이 join 없이 바로 렌더링할 수 있게 한다.
+// 미설정/실패 시 조용히 null 반환 — 로컬 스트릭·완료 UI는 이 저장 성공 여부와 무관하게 진행된다.
+// 생성된 행의 id를 반환한다 — STEP4의 "반응 받기"가 나중에 같은 행에 ai_response를 붙이려면 필요.
+export async function submitEntry(input: {
+  questionId: string;
+  situation: string;
+  question: string;
+  content: string;
+}): Promise<string | null> {
+  if (!client) return null;
+  try {
+    const deviceId = await getDeviceId();
+    const { data, error } = await client
+      .from('entries')
+      .insert({
+        user_id: deviceId,
+        question_id: input.questionId,
+        situation: input.situation,
+        question: input.question,
+        content: input.content,
+      })
+      .select('id')
+      .single();
+    if (error || !data) return null;
+    return (data as { id: string }).id;
+  } catch (e) {
+    if (__DEV__) console.warn('[supabase] submitEntry 실패(무시, 폴백)', e);
+    return null;
+  }
+}
+
+// 기록에 대한 선택적 AI 반응을 같은 행에 채워 넣는다. 미설정/실패해도 화면은 죽지 않는다
+// (반응은 화면에 이미 표시된 뒤 저장을 시도하는 것뿐이라, 실패해도 사용자 경험엔 영향 없음).
+export async function updateEntryAiResponse(entryId: string, aiResponse: string): Promise<void> {
+  if (!client) return;
+  try {
+    await client.from('entries').update({ ai_response: aiResponse }).eq('id', entryId);
+  } catch (e) {
+    if (__DEV__) console.warn('[supabase] updateEntryAiResponse 실패(무시)', e);
+  }
+}
+
+// 내 기록을 최신순으로 조회한다. 미설정/실패/테이블 없음이면 빈 배열 —
+// 화면은 "아직 기록이 없어요" 안내로 자연 폴백한다.
+export async function fetchEntries(): Promise<EntryRecord[]> {
+  if (!client) return [];
+  try {
+    const deviceId = await getDeviceId();
+    const { data, error } = await client
+      .from('entries')
+      .select('*')
+      .eq('user_id', deviceId)
+      .order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data as EntryRecord[];
+  } catch (e) {
+    if (__DEV__) console.warn('[supabase] fetchEntries 실패(무시, 폴백)', e);
+    return [];
+  }
+}

@@ -77,7 +77,10 @@
       "Bash(rm -f '/Users/mang/Library/Developer/CoreSimulator/Devices/EC6D58DF-2732-41F4-8DDB-7A7DF568313B/data/Containers/Data/Application/2B6AC0EF-AF6C-489E-9EC0-45D410AE467B/Library/Application Support/com.anonymous.book/RCTAsyncLocalStorage_V1/59de7a0fe1f5127e7496e3fcb79d4225')",
       "Bash(grep *)",
       "Bash(sed -i '' 's/maxOutputTokens: 900/maxOutputTokens: 1300/' test_hidden_fact.mjs)",
-      "Bash(sed -i '' \"s/지금 바로 드라마를 써라. \\\\[씬1\\\\]부터 \\\\[씬5\\\\]까지. 인사 없이, 설명 없이./지금 바로 드라마를 써라. [씬1]부터 [씬5]까지, 그리고 마지막에 [진실]까지. 인사 없이, 설명 없이./\" test_hidden_fact.mjs)"
+      "Bash(sed -i '' \"s/지금 바로 드라마를 써라. \\\\[씬1\\\\]부터 \\\\[씬5\\\\]까지. 인사 없이, 설명 없이./지금 바로 드라마를 써라. [씬1]부터 [씬5]까지, 그리고 마지막에 [진실]까지. 인사 없이, 설명 없이./\" test_hidden_fact.mjs)",
+      "Bash(echo \"빌드 시작, PID: $!\")",
+      "Bash(kill 62213 62195)",
+      "Bash(echo \"Metro 재시작 PID: $!\")"
     ]
   }
 }
