@@ -1,0 +1,36 @@
+-- ============================================================================
+-- best-answer-notify — pg_cron 매일 등록 예시 (문서/준비용, 전체 주석 처리)
+-- ============================================================================
+-- 아래는 배포된 Edge Function을 매일 아침 8시(UTC 기준 23시 ≈ KST 08시)에
+-- 호출하도록 pg_cron으로 등록하는 예시입니다.
+--
+-- 실행 전 준비:
+--   1) Supabase Dashboard → Database → Extensions 에서 pg_cron, pg_net 활성화
+--   2) Edge Function을 먼저 배포 (README.md 참고)
+--   3) 아래 <PROJECT_REF> 와 <SERVICE_ROLE_KEY> 를 실제 값으로 교체
+--   4) 주석을 해제하고 SQL Editor에서 실행
+--
+-- 주의: SERVICE_ROLE_KEY는 강력한 비밀 키입니다. SQL에 하드코딩하기보다는
+--       Vault(supabase_vault) 사용을 권장합니다. 아래는 최소 예시입니다.
+-- ============================================================================
+
+-- select cron.schedule(
+--   'best-answer-notify-daily',
+--   '0 23 * * *',   -- 매일 23:00 UTC ≈ 08:00 KST
+--   $$
+--   select net.http_post(
+--     url    := 'https://<PROJECT_REF>.functions.supabase.co/best-answer-notify',
+--     headers:= jsonb_build_object(
+--       'Content-Type',  'application/json',
+--       'Authorization', 'Bearer <SERVICE_ROLE_KEY>'
+--     ),
+--     body   := '{}'::jsonb
+--   );
+--   $$
+-- );
+
+-- 등록 확인:
+-- select * from cron.job;
+
+-- 등록 해제:
+-- select cron.unschedule('best-answer-notify-daily');

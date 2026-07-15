@@ -14,7 +14,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootStackParamList, Perspective } from '../types';
+import { getScenarioId } from '../services/claude';
+import { submitAnswer } from '../services/supabase';
 
 type Nav = StackNavigationProp<RootStackParamList, 'Perspective'>;
 type Route = RouteProp<RootStackParamList, 'Perspective'>;
@@ -61,6 +64,27 @@ export default function PerspectiveScreen({ navigation, route }: { navigation: N
       character: char,
       opinion: opinions[i].trim(),
     }));
+
+    // 답변 풀 등록은 화면 전환을 지연/블로킹하지 않는다(fire-and-forget). 실패는 supabase.ts가 삼킨다.
+    const scenarioId = getScenarioId();
+    let repIndex = -1;
+    let repLen = -1;
+    characters.forEach((char, i) => {
+      const content = opinions[i].trim();
+      if (content.length === 0) return;
+      submitAnswer({ scenarioId, perspectiveTag: char, content });
+      if (content.length > repLen) {
+        repLen = content.length;
+        repIndex = i;
+      }
+    });
+    if (repIndex !== -1) {
+      AsyncStorage.setItem(
+        `myPerspective:${scenarioId}`,
+        JSON.stringify({ tag: characters[repIndex], content: opinions[repIndex].trim() })
+      ).catch(() => {});
+    }
+
     navigation.navigate('Chat', { scenario, perspectives });
   };
 

@@ -12,8 +12,15 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootStackParamList } from '../types';
-import { generateEnding } from '../services/claude';
+import { generateEnding, getScenarioId } from '../services/claude';
+import {
+  AnswerRecord,
+  fetchAnswersForScenario,
+  fetchBestAnswers,
+  fetchOppositePerspectiveAnswer,
+} from '../services/supabase';
 
 type EndingScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Ending'>;
 type EndingScreenRouteProp = RouteProp<RootStackParamList, 'Ending'>;
@@ -39,6 +46,15 @@ const SECTION_COLORS: Record<string, string> = {
   '놓치기 쉬운 관점': '#1C3A2E',
   '아직 남은 질문': '#2D1B4E',
 };
+
+function shuffle<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
 
 function parseSections(text: string): { title: string; body: string }[] {
   const sections: { title: string; body: string }[] = [];
@@ -105,6 +121,49 @@ export default function EndingScreen({ navigation, route }: Props) {
       });
   }, []);
 
+  // 관음 섹션(관점 분포/베스트 답변/정반대 관점/다양한 관점) — 결말 생성과 독립적으로 로드.
+  // Supabase 미설정·네트워크 실패는 supabase.ts가 전부 조용히 삼키므로 여기선 화면이 죽지 않는다.
+  const peekMountedRef = useRef(false);
+  const [allAnswers, setAllAnswers] = useState<AnswerRecord[]>([]);
+  const [bestAnswers, setBestAnswers] = useState<AnswerRecord[]>([]);
+  const [oppositeAnswer, setOppositeAnswer] = useState<AnswerRecord | null>(null);
+  const [myTag, setMyTag] = useState<string | null>(null);
+  const [oppExpanded, setOppExpanded] = useState(false);
+
+  useEffect(() => {
+    if (peekMountedRef.current) return;
+    peekMountedRef.current = true;
+    (async () => {
+      const scenarioId = getScenarioId();
+      let myPerspectiveTag: string | null = null;
+      try {
+        const raw = await AsyncStorage.getItem(`myPerspective:${scenarioId}`);
+        if (raw) myPerspectiveTag = JSON.parse(raw)?.tag ?? null;
+      } catch {
+        // 없어도 나머지 섹션은 그대로 진행
+      }
+
+      const [all, best, opp] = await Promise.all([
+        fetchAnswersForScenario(scenarioId),
+        fetchBestAnswers(scenarioId, 3),
+        myPerspectiveTag ? fetchOppositePerspectiveAnswer(scenarioId, myPerspectiveTag) : Promise.resolve(null),
+      ]);
+
+      setAllAnswers(all);
+      setBestAnswers(best);
+      setOppositeAnswer(opp);
+      setMyTag(myPerspectiveTag);
+    })();
+  }, []);
+
+  const bestIds = new Set(bestAnswers.map(a => a.answer_id));
+  const diverseAnswers = shuffle(allAnswers.filter(a => !bestIds.has(a.answer_id))).slice(0, 3);
+  const perspectiveGroups = allAnswers.reduce<Record<string, number>>((acc, a) => {
+    acc[a.perspective_tag] = (acc[a.perspective_tag] ?? 0) + 1;
+    return acc;
+  }, {});
+  const perspectiveTotal = allAnswers.length;
+
   const webStyle = Platform.OS === 'web'
     ? { paddingTop: insets.top, paddingBottom: insets.bottom } as const
     : undefined;
@@ -159,6 +218,85 @@ export default function EndingScreen({ navigation, route }: Props) {
                 </View>
               );
             })}
+
+            {/* ── 관점 분포 ── */}
+            <View style={[styles.peekCard, { backgroundColor: '#1E293B' }]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionIcon}>📊</Text>
+                <Text style={styles.sectionTitle}>관점 분포</Text>
+              </View>
+              {perspectiveTotal === 0 ? (
+                <Text style={styles.peekEmptyText}>아직 다른 사람들의 관점이 모이는 중이에요.</Text>
+              ) : (
+                <View style={{ gap: height * 0.01 }}>
+                  {Object.entries(perspectiveGroups).map(([tag, count]) => {
+                    const pct = Math.round((count / perspectiveTotal) * 100);
+                    return (
+                      <View key={tag}>
+                        <Text style={styles.peekBarLabel}>{tag} · {pct}%</Text>
+                        <View style={styles.peekBarTrack}>
+                          <View style={[styles.peekBarFill, { width: `${pct}%` }]} />
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+
+            {/* ── 오늘의 베스트 답변 3개 ── */}
+            <View style={[styles.peekCard, { backgroundColor: '#1C3A2E' }]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionIcon}>🏆</Text>
+                <Text style={styles.sectionTitle}>오늘의 베스트 답변</Text>
+              </View>
+              {bestAnswers.length === 0 ? (
+                <Text style={styles.peekEmptyText}>첫 답변의 주인공이 되어보세요.</Text>
+              ) : (
+                bestAnswers.map(a => (
+                  <View key={a.answer_id} style={styles.peekAnswerRow}>
+                    <Text style={styles.peekAnswerTag}>{a.perspective_tag}</Text>
+                    <Text style={styles.peekAnswerContent} numberOfLines={3}>{a.content}</Text>
+                  </View>
+                ))
+              )}
+            </View>
+
+            {/* ── 나와 정반대 관점 ── */}
+            <View style={[styles.peekCard, { backgroundColor: '#1E3A5F' }]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionIcon}>🔀</Text>
+                <Text style={styles.sectionTitle}>나와 정반대 관점</Text>
+              </View>
+              {!myTag || !oppositeAnswer ? (
+                <Text style={styles.peekEmptyText}>정반대 관점이 아직 없어요.</Text>
+              ) : oppExpanded ? (
+                <View style={styles.peekAnswerRow}>
+                  <Text style={styles.peekAnswerTag}>{oppositeAnswer.perspective_tag}</Text>
+                  <Text style={styles.peekAnswerContent}>{oppositeAnswer.content}</Text>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={() => setOppExpanded(true)} activeOpacity={0.85}>
+                  <Text style={styles.peekRevealText}>내 관점({myTag})과 다른 답변 보기 →</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* ── 오늘의 다양한 관점 ── */}
+            {diverseAnswers.length > 0 && (
+              <View style={[styles.peekCard, { backgroundColor: '#2D1B4E' }]}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionIcon}>🎲</Text>
+                  <Text style={styles.sectionTitle}>오늘의 다양한 관점</Text>
+                </View>
+                {diverseAnswers.map(a => (
+                  <View key={a.answer_id} style={styles.peekAnswerRow}>
+                    <Text style={styles.peekAnswerTag}>{a.perspective_tag}</Text>
+                    <Text style={styles.peekAnswerContent} numberOfLines={2}>{a.content}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {/* 다음 사건 버튼 */}
             <TouchableOpacity
@@ -283,6 +421,54 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     fontSize: width * 0.044,
     lineHeight: width * 0.072,
+  },
+
+  peekCard: {
+    borderRadius: width * 0.04,
+    padding: width * 0.055,
+    gap: height * 0.01,
+  },
+  peekEmptyText: {
+    fontSize: width * 0.036,
+    color: '#94A3B8',
+    lineHeight: width * 0.056,
+  },
+  peekBarLabel: {
+    fontSize: width * 0.034,
+    color: '#CBD5E1',
+    marginBottom: height * 0.004,
+  },
+  peekBarTrack: {
+    height: height * 0.01,
+    borderRadius: height * 0.005,
+    backgroundColor: '#0F172A',
+    overflow: 'hidden',
+  },
+  peekBarFill: {
+    height: '100%',
+    borderRadius: height * 0.005,
+    backgroundColor: '#6366F1',
+  },
+  peekAnswerRow: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    paddingTop: height * 0.01,
+    gap: height * 0.004,
+  },
+  peekAnswerTag: {
+    fontSize: width * 0.032,
+    color: '#A5B4FC',
+    fontWeight: '700',
+  },
+  peekAnswerContent: {
+    fontSize: width * 0.036,
+    color: '#E2E8F0',
+    lineHeight: width * 0.054,
+  },
+  peekRevealText: {
+    fontSize: width * 0.036,
+    color: '#93C5FD',
+    fontWeight: '600',
   },
 
   nextBtn: {

@@ -5,12 +5,18 @@ import { Message } from '../types';
 interface Props {
   message: Message;
   userName: string;
+  characterName?: string;
+  characterEmoji?: string;
 }
 
 const { width } = Dimensions.get('window');
 
-export default function MessageBubble({ message, userName }: Props) {
+export default function MessageBubble({ message, userName, characterName, characterEmoji }: Props) {
   const isUser = message.role === 'user';
+  // assistant 발신자 라벨: 이모지+이름이 있으면 이름표처럼, 없으면 기존 'AI' 폴백
+  const aiLabel = characterEmoji
+    ? `${characterEmoji} ${characterName ?? ''}`.trim()
+    : characterName ?? 'AI';
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(width * 0.03)).current;
 
@@ -30,7 +36,7 @@ export default function MessageBubble({ message, userName }: Props) {
       ]}
     >
       <Text style={[styles.sender, isUser ? styles.userSender : styles.aiSender]}>
-        {isUser ? userName : 'AI'}
+        {isUser ? userName : aiLabel}
       </Text>
       <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
         <Text style={[styles.text, isUser ? styles.userText : styles.aiText]}>

@@ -18,7 +18,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, Message, StreakData } from '../types';
 import MessageBubble from '../components/MessageBubble';
 import TypingIndicator from '../components/TypingIndicator';
-import { loadCachedScenario, generateDailyScenario, characterReply } from '../services/claude';
+import { loadCachedScenario, generateDailyScenario, characterReply, openCharacterSession, getScenarioCharacter } from '../services/claude';
 
 type ChatScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Chat' | 'Ending'>;
 
@@ -50,6 +50,7 @@ function parseChoices(text: string): string[] {
 export default function ChatScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [scenario, setScenario] = useState('');
+  const [character, setCharacter] = useState<{ emoji: string; displayName: string } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -80,21 +81,56 @@ export default function ChatScreen({ navigation }: Props) {
     pulse(dot3, 360);
   }, []);
 
-  // 캐시에서만 시나리오 로드 — API 호출 없음.
-  // 캐시 미스 시 scenario = '' 로 두고 첫 메시지 전송 시 lazy 생성.
-  // StrictMode 이중 실행 방어: mountedRef
+  // 마운트 시 시나리오 확보 → 캐릭터/이름 세팅 → AI 오프닝 자동발송.
+  // 캐시 미스면 시나리오를 lazy 생성한다.
+  // StrictMode 이중 실행 방어: mountedRef (절대 제거 금지)
   const mountedRef = useRef(false);
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
     (async () => {
+      let activeScenario = '';
       try {
+        // 1) 시나리오 확보 (캐시 우선, 없으면 lazy 생성)
         const cached = await loadCachedScenario();
-        if (cached) setScenario(cached);
+        activeScenario = cached ?? (await generateDailyScenario());
+        setScenario(activeScenario);
       } catch (e) {
-        console.error('[ChatScreen] 캐시 로드 실패:', e);
+        console.error('[ChatScreen] 시나리오 로드/생성 실패:', e);
       } finally {
         setLoading(false);
+      }
+
+      if (!activeScenario) return; // 시나리오 없으면 입력창만 사용 가능하게 두고 종료
+
+      // 2) 캐릭터/사람 이름 세팅 (동기, API 불필요)
+      try {
+        const meta = getScenarioCharacter(activeScenario);
+        setCharacter({ emoji: meta.emoji, displayName: meta.displayName });
+      } catch (e) {
+        console.error('[ChatScreen] 캐릭터 메타 계산 실패:', e);
+      }
+
+      // 3) AI 오프닝 자동발송 — 사용자 입력 없이 첫 assistant 메시지 세팅.
+      //    스트릭은 절대 건드리지 않는다 (recordStreak 호출 없음).
+      setIsTyping(true);
+      try {
+        const opening = await openCharacterSession(activeScenario);
+        if (opening && opening.trim()) {
+          setMessages([
+            {
+              id: generateId(),
+              role: 'assistant',
+              content: opening,
+              timestamp: new Date(),
+            },
+          ]);
+        }
+      } catch (e) {
+        // 실패 시 조용한 폴백: 오프닝 없이 넘어가고 입력창은 계속 사용 가능.
+        console.error('[ChatScreen] 오프닝 자동발송 실패:', e);
+      } finally {
+        setIsTyping(false);
       }
     })();
   }, []);
@@ -183,7 +219,12 @@ export default function ChatScreen({ navigation }: Props) {
   }, [inputText, messages, isTyping, scenario, streakRecorded]);
 
   const renderItem = ({ item }: { item: Message }) => (
-    <MessageBubble message={item} userName="나" />
+    <MessageBubble
+      message={item}
+      userName="나"
+      characterName={character?.displayName}
+      characterEmoji={character?.emoji}
+    />
   );
 
   // 마지막 AI 메시지에서 선택지 파싱
@@ -223,9 +264,11 @@ export default function ChatScreen({ navigation }: Props) {
           <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <View style={styles.avatarDot} />
+          <View style={styles.avatarDot}>
+            {character?.emoji ? <Text style={styles.avatarEmoji}>{character.emoji}</Text> : null}
+          </View>
           <View>
-            <Text style={styles.headerName}>알 수 없음</Text>
+            <Text style={styles.headerName}>{character?.displayName ?? '알 수 없음'}</Text>
             <Text style={styles.headerStatus}>온라인</Text>
           </View>
         </View>
@@ -391,6 +434,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E293B',
     borderWidth: 2,
     borderColor: '#22C55E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEmoji: {
+    fontSize: width * 0.045,
   },
   headerName: {
     fontSize: width * 0.038,
