@@ -1,8 +1,6 @@
 // 기록 앱 전환에서 쓰는 문구 상수. 압박·상실 프레임("끊겼습니다" 등) 금지 —
 // 스트릭이 끊겨도 다음 기회를 여는 톤을 유지한다.
 export const TODAY_SCREEN = {
-  headerTitle: '하루 한 질문',
-  guide: '정답은 없어요. 편하게 생각을 남겨보세요.',
   writeButton: '생각 남기기',
 } as const;
 

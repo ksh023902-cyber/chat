@@ -5,14 +5,6 @@ export interface StreakData {
   lastDate: string;
 }
 
-export interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-  isCrisis?: boolean;
-}
-
 // "오늘" 탭 내부 스택
 export type TodayStackParamList = {
   Today: undefined;
@@ -23,6 +15,7 @@ export type TodayStackParamList = {
 export type CalendarStackParamList = {
   Calendar: undefined;
   EntryDetail: { entry: EntryRecord };
+  FontSelect: undefined;
 };
 
 // 하단 탭 (각 탭은 위 스택을 하나씩 품는다)
@@ -31,11 +24,8 @@ export type MainTabParamList = {
   CalendarTab: undefined;
 };
 
-// 루트 스택 — 비판적 사고 채팅(StartChat→Chat)이 주 진입점.
-// Main(저널 탭)·Home·Alarm은 유지.
+// 루트 스택 — Main(저널: 오늘/캘린더 탭)이 주 진입점. Home은 도달 불가능한 레거시.
 export type RootStackParamList = {
-  StartChat: undefined;
-  Chat: { userName: string; topic: string };
   Main: undefined;
   Home: undefined;
   Alarm: undefined;

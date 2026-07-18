@@ -1,6 +1,12 @@
 {
   "permissions": {
+    "defaultMode": "acceptEdits",
     "allow": [
+      "Write",
+      "Edit",
+      "Agent",
+      "Bash(git *)",
+      "Bash(npm *)",
       "Bash(pkill -f \"expo start\")",
       "Bash(npm uninstall:*)",
       "Bash(npm install:*)",

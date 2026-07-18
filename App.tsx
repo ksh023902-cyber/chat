@@ -1,19 +1,21 @@
 import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
-import { Platform, Text } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
+import { NotoSerifKR_400Regular, NotoSerifKR_700Bold } from '@expo-google-fonts/noto-serif-kr';
+import { Gaegu_400Regular, Gaegu_700Bold } from '@expo-google-fonts/gaegu';
 import { RootStackParamList, TodayStackParamList, CalendarStackParamList, MainTabParamList } from './src/types';
 import TodayScreen from './src/screens/TodayScreen';
 import WriteScreen from './src/screens/WriteScreen';
 import CalendarScreen from './src/screens/CalendarScreen';
 import EntryDetailScreen from './src/screens/EntryDetailScreen';
+import FontSelectScreen from './src/screens/FontSelectScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import AlarmScreen from './src/screens/AlarmScreen';
-import StartChatScreen from './src/screens/StartChatScreen';
-import ChatScreen from './src/screens/ChatScreen';
 import { setupNotificationHandler } from './src/services/notifications';
 
 const RootStack = createStackNavigator<RootStackParamList>();
@@ -35,6 +37,11 @@ function CalendarStackScreen() {
     <CalendarStack.Navigator screenOptions={{ headerShown: false }}>
       <CalendarStack.Screen name="Calendar" component={CalendarScreen} />
       <CalendarStack.Screen name="EntryDetail" component={EntryDetailScreen} />
+      <CalendarStack.Screen
+        name="FontSelect"
+        component={FontSelectScreen}
+        options={{ presentation: 'modal' }}
+      />
     </CalendarStack.Navigator>
   );
 }
@@ -64,6 +71,13 @@ function MainTabs() {
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    NotoSerifKR_400Regular,
+    NotoSerifKR_700Bold,
+    Gaegu_400Regular,
+    Gaegu_700Bold,
+  });
+
   useEffect(() => {
     setupNotificationHandler();
     if (Platform.OS === 'web') {
@@ -76,11 +90,16 @@ export default function App() {
     }
   }, []);
 
+  // 명조·손글씨 폰트가 로드되기 전에는 검은 화면만 보여준다(스플래시 모듈 추가 없이).
+  if (!fontsLoaded) {
+    return <View style={{ flex: 1, backgroundColor: '#0A0F1E' }} />;
+  }
+
   return (
     <NavigationContainer>
       <StatusBar style="light" />
       <RootStack.Navigator
-        initialRouteName="StartChat"
+        initialRouteName="Main"
         screenOptions={{
           headerStyle: { backgroundColor: '#0F172A' },
           headerTintColor: '#94A3B8',
@@ -88,8 +107,6 @@ export default function App() {
           cardStyle: { backgroundColor: '#0F172A' },
         }}
       >
-        <RootStack.Screen name="StartChat" component={StartChatScreen} options={{ headerShown: false }} />
-        <RootStack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
         <RootStack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="Alarm" component={AlarmScreen} options={{ headerShown: false }} />

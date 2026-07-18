@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RouteProp } from '@react-navigation/native';
+import { RouteProp, useFocusEffect } from '@react-navigation/native';
 import { CalendarStackParamList } from '../types';
 import { updateEntryAiResponse } from '../services/supabase';
 import { generateEntryReaction } from '../services/claude';
 import { spacing, fontSize } from '../constants/tokens';
 import { REACTION } from '../constants/strings';
+import { FontChoice, FONT_FAMILIES, getFontChoice } from '../services/fontPreference';
 
 type Nav = StackNavigationProp<CalendarStackParamList, 'EntryDetail'>;
 type Route = RouteProp<CalendarStackParamList, 'EntryDetail'>;
@@ -21,6 +22,14 @@ export default function EntryDetailScreen({ navigation, route }: { navigation: N
   const { entry } = route.params;
   const [reaction, setReaction] = useState<string | null>(entry.ai_response ?? null);
   const [loading, setLoading] = useState(false);
+  const [fontChoice, setFontChoiceState] = useState<FontChoice>('default');
+
+  // FontSelect에서 고르고 돌아올 때마다 최신 선택값을 반영한다.
+  useFocusEffect(
+    React.useCallback(() => {
+      getFontChoice().then(setFontChoiceState);
+    }, [])
+  );
 
   // 버튼을 눌렀을 때만 호출된다 — 안 누르면 AI는 절대 등장하지 않는다.
   const handleReaction = async () => {
@@ -49,7 +58,7 @@ export default function EntryDetailScreen({ navigation, route }: { navigation: N
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.situation}>{entry.situation}</Text>
         <Text style={styles.question}>{entry.question}</Text>
-        <Text style={styles.body}>{entry.content}</Text>
+        <Text style={[styles.body, { fontFamily: FONT_FAMILIES[fontChoice] }]}>{entry.content}</Text>
 
         {reaction ? (
           <View style={styles.aiCard}>
@@ -68,6 +77,14 @@ export default function EntryDetailScreen({ navigation, route }: { navigation: N
           </TouchableOpacity>
         )}
       </ScrollView>
+
+      <TouchableOpacity
+        style={styles.fontButton}
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('FontSelect')}
+      >
+        <Text style={styles.fontButtonText}>폰트</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -145,5 +162,21 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     fontWeight: '600',
     color: '#A5B4FC',
+  },
+  fontButton: {
+    position: 'absolute',
+    right: spacing.lg,
+    bottom: spacing.lg,
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  fontButtonText: {
+    fontSize: fontSize.sub,
+    fontWeight: '600',
+    color: '#CBD5E1',
   },
 });
