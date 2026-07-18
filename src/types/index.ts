@@ -5,6 +5,14 @@ export interface StreakData {
   lastDate: string;
 }
 
+export interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+  isCrisis?: boolean;
+}
+
 // "오늘" 탭 내부 스택
 export type TodayStackParamList = {
   Today: undefined;
@@ -23,9 +31,11 @@ export type MainTabParamList = {
   CalendarTab: undefined;
 };
 
-// 루트 스택 — 탭 네비게이터(Main) + 레거시 화면(Home: 도달 불가지만 STEP 6 목록에 없어 보존,
-// Alarm: 살아있는 독립 기능)
+// 루트 스택 — 비판적 사고 채팅(StartChat→Chat)이 주 진입점.
+// Main(저널 탭)·Home·Alarm은 유지.
 export type RootStackParamList = {
+  StartChat: undefined;
+  Chat: { userName: string; topic: string };
   Main: undefined;
   Home: undefined;
   Alarm: undefined;
