@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { CalendarStackParamList } from '../types';
 import { fetchEntries, EntryRecord } from '../services/supabase';
 import { spacing, fontSize } from '../constants/tokens';
@@ -41,16 +42,22 @@ export default function CalendarScreen({ navigation }: { navigation: Nav }) {
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
 
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    if (mountedRef.current) return;
-    mountedRef.current = true;
-    (async () => {
-      const data = await fetchEntries();
-      setEntries(data);
-      setLoading(false);
-    })();
-  }, []);
+  // 캘린더 탭에 포커스가 올 때마다(기록 저장 후 돌아왔을 때 포함) 다시 불러온다.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const data = await fetchEntries();
+        if (!cancelled) {
+          setEntries(data);
+          setLoading(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   const entriesByDate = new Map<string, EntryRecord>();
   entries.forEach((e) => {
@@ -101,8 +108,7 @@ export default function CalendarScreen({ navigation }: { navigation: Nav }) {
             <TouchableOpacity
               key={i}
               style={styles.cell}
-              activeOpacity={entry ? 0.7 : 1}
-              disabled={!entry}
+              activeOpacity={0.6}
               onPress={() => entry && navigation.navigate('EntryDetail', { entry })}
             >
               <View style={[styles.dayCircle, isToday && styles.dayCircleToday]}>
